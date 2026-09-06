@@ -1,5 +1,7 @@
 # Vibe Lyrics
 
+![Vibe Lyrics](poster/Vibe-Lyrics-Poster.png)
+
 Desktop lyrics for Apple Music —— macOS 桌面悬浮歌词，实时联动 Music.app。
 
 纯文字无边框悬浮显示，取 Apple 官方歌词（含逐字时间轴）。逐字歌曲有完整动效：未唱的字是失焦白雾，快唱到前 0.45 秒烟雾聚拢成亮字，唱到时浮起又落下（波浪弧线）伴随辉光，换行以「向上滚动一格」的方式接力。
