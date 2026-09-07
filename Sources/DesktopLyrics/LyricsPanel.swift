@@ -148,7 +148,7 @@ final class PanelController: ObservableObject {
 
     /// OverlayView 每次换行时汇报当前文字宽度和内容布局，用于计算可交互区域
     func updateContentMetrics(fontSize: CGFloat, showTranslation: Bool, textWidth: CGFloat) {
-        let lineHeight = fontSize * 2.9
+        let lineHeight = fontSize * 2.55
         let translationHeight = showTranslation ? fontSize * 0.95 : 0
         let nextHeight = fontSize * 1.25
         let contentHeight = lineHeight + translationHeight + nextHeight

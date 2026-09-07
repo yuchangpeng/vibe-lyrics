@@ -21,6 +21,8 @@ struct LyricLine: Equatable {
 struct Lyrics: Equatable {
     var lines: [LyricLine]
     var wordTimed: Bool
+    /// 整首歌是否带官方翻译（决定翻译槽位是否保留）
+    var hasTranslation: Bool
 
     /// 当前应显示的行：最后一个 begin <= t 的行；t 在第一句之前时返回 nil
     func currentIndex(at t: Double) -> Int? {
@@ -53,7 +55,8 @@ enum TTMLParser {
         }
         let wordTimed = sax.timing.lowercased() == "word"
             || lines.contains { $0.words?.isEmpty == false }
-        return Lyrics(lines: lines, wordTimed: wordTimed)
+        let hasTranslation = lines.contains { $0.translation != nil }
+        return Lyrics(lines: lines, wordTimed: wordTimed, hasTranslation: hasTranslation)
     }
 
     /// "15.055" / "1:15.055" / "1:02:03.004" → 秒

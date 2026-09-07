@@ -20,13 +20,9 @@ struct OverlayView: View {
     @AppStorage("lyricTint") private var tintRaw = LyricTint.white.rawValue
 
     private var tint: Color { (LyricTint(rawValue: tintRaw) ?? .white).color }
-    private var lineHeight: CGFloat { fontSize * 2.9 }
+    private var lineHeight: CGFloat { fontSize * 2.55 }
     private var translationHeight: CGFloat { fontSize * 0.95 }
     private var nextHeight: CGFloat { fontSize * 1.25 }
-    /// 滚动换行的行程：预告句中心到主句中心的距离
-    private var scrollDistance: CGFloat {
-        (lineHeight + nextHeight) / 2 + (showTranslation ? translationHeight : 0)
-    }
 
     /// 刷新率：逐字 60fps（动画平滑），逐行 30fps，暂停 10fps
     private var tickInterval: Double {
@@ -102,6 +98,8 @@ struct OverlayView: View {
     private func lyricsView(_ lyrics: Lyrics, at date: Date) -> some View {
         let position = player.currentPosition(at: date) + lyricsOffset
         let index = lyrics.currentIndex(at: position)
+        let translationOn = showTranslation && lyrics.hasTranslation
+        let scrollDistance = (lineHeight + nextHeight) / 2 + (translationOn ? translationHeight : 0)
         return VStack(spacing: 0) {
             // 主句槽位（高度恒定）
             ZStack {
@@ -129,8 +127,8 @@ struct OverlayView: View {
                     PlayerEngine.shared.seek(to: max(0, lyrics.lines[index].begin - 0.1))
                 }
             }
-            // 翻译槽位（开关控制，高度恒定）
-            if showTranslation {
+            // 翻译槽位（仅这首歌有翻译时保留，高度恒定）
+            if translationOn {
                 ZStack {
                     if let index, let translation = lyrics.lines[index].translation {
                         translationLine(translation)
@@ -167,7 +165,9 @@ struct OverlayView: View {
         let natural = TextMeasure.width(of: text, size: fontSize)
         let width = min(natural, PanelController.shared.panelWidth - 56)
         PanelController.shared.updateContentMetrics(
-            fontSize: fontSize, showTranslation: showTranslation, textWidth: width
+            fontSize: fontSize,
+            showTranslation: showTranslation && lyrics.hasTranslation,
+            textWidth: width
         )
     }
 
