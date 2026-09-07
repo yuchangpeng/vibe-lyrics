@@ -12,6 +12,10 @@ struct LyricLine: Equatable {
     var text: String
     /// 逐字时间轴（syllable 歌词才有），卡拉OK渲染用
     var words: [LyricWord]?
+    /// TTML 行标识（itunes:key），用于对应官方翻译
+    var key: String?
+    /// 官方翻译（歌曲带翻译时）
+    var translation: String?
 }
 
 struct Lyrics: Equatable {
@@ -29,7 +33,7 @@ struct Lyrics: Equatable {
 }
 
 enum TTMLParser {
-    /// Apple TTML 歌词解析（兼容逐行 timing="Line" 和逐字 timing="Word"）。
+    /// Apple TTML 歌词解析（兼容逐行 timing="Line" 和逐字 timing="Word"，含官方翻译）。
     /// 用 SAX（XMLParser）而不是 XMLDocument：后者会丢掉词与词之间的纯空格文本节点。
     static func parse(_ ttml: String) -> Lyrics? {
         guard let data = ttml.data(using: .utf8) else { return nil }
@@ -39,9 +43,17 @@ enum TTMLParser {
         parser.shouldProcessNamespaces = true
         guard parser.parse() || !sax.lines.isEmpty else { return nil }
         guard !sax.lines.isEmpty else { return nil }
+        var lines = sax.lines
+        if !sax.translations.isEmpty {
+            for i in lines.indices {
+                if let key = lines[i].key, let t = sax.translations[key] {
+                    lines[i].translation = t
+                }
+            }
+        }
         let wordTimed = sax.timing.lowercased() == "word"
-            || sax.lines.contains { $0.words?.isEmpty == false }
-        return Lyrics(lines: sax.lines, wordTimed: wordTimed)
+            || lines.contains { $0.words?.isEmpty == false }
+        return Lyrics(lines: lines, wordTimed: wordTimed)
     }
 
     /// "15.055" / "1:15.055" / "1:02:03.004" → 秒
@@ -59,11 +71,14 @@ enum TTMLParser {
     private final class SAXDelegate: NSObject, XMLParserDelegate {
         var timing = "Line"
         var lines: [LyricLine] = []
+        /// 行 key → 翻译文本（head 里的 iTunesMetadata/translations）
+        var translations: [String: String] = [:]
 
         // 当前 <p>（一行）的累积状态
         private var inLine = false
         private var lineBegin: Double = 0
         private var lineEnd: Double = 0
+        private var lineKey: String?
         private var lineText = ""
         private var words: [LyricWord] = []
 
@@ -71,6 +86,11 @@ enum TTMLParser {
         private var spanStack: [(begin: Double?, end: Double?, isBackground: Bool)] = []
         private var wordText = ""
         private var backgroundDepth = 0
+
+        // 翻译解析状态：只取第一个 <translation> 块（通常即用户语言）
+        private var translationBlockCount = 0
+        private var currentTranslationKey: String?
+        private var translationBuffer = ""
 
         func parser(
             _ parser: XMLParser, didStartElement elementName: String,
@@ -80,11 +100,19 @@ enum TTMLParser {
             switch elementName {
             case "tt":
                 if let t = attributes["itunes:timing"] { timing = t }
+            case "translation":
+                translationBlockCount += 1
+            case "text" where translationBlockCount == 1 && !inLine:
+                if let key = attributes["for"] {
+                    currentTranslationKey = key
+                    translationBuffer = ""
+                }
             case "p":
                 guard let begin = TTMLParser.parseTime(attributes["begin"]) else { return }
                 inLine = true
                 lineBegin = begin
                 lineEnd = TTMLParser.parseTime(attributes["end"]) ?? begin
+                lineKey = attributes["itunes:key"]
                 lineText = ""
                 words = []
                 spanStack = []
@@ -105,6 +133,10 @@ enum TTMLParser {
         }
 
         func parser(_ parser: XMLParser, foundCharacters string: String) {
+            if currentTranslationKey != nil {
+                translationBuffer += string
+                return
+            }
             guard inLine, backgroundDepth == 0 else { return }
             lineText += string
             if let top = spanStack.last, top.begin != nil {
@@ -120,6 +152,12 @@ enum TTMLParser {
             namespaceURI: String?, qualifiedName: String?
         ) {
             switch elementName {
+            case "text":
+                if let key = currentTranslationKey {
+                    let t = translationBuffer.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !t.isEmpty { translations[key] = t }
+                    currentTranslationKey = nil
+                }
             case "span" where inLine && !spanStack.isEmpty:
                 let top = spanStack.removeLast()
                 if top.isBackground {
@@ -135,7 +173,8 @@ enum TTMLParser {
                     lines.append(LyricLine(
                         begin: lineBegin, end: lineEnd,
                         text: trimmed,
-                        words: words.isEmpty ? nil : words
+                        words: words.isEmpty ? nil : words,
+                        key: lineKey
                     ))
                 }
             default:

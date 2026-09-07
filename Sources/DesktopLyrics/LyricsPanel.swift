@@ -27,7 +27,7 @@ final class LyricsPanel: NSPanel {
     override var canBecomeMain: Bool { false }
 }
 
-/// 悬浮窗控制器：创建、显示/隐藏、鼠标穿透
+/// 悬浮窗控制器：创建、显示/隐藏、智能穿透
 final class PanelController: ObservableObject {
     static let shared = PanelController()
 
@@ -38,17 +38,23 @@ final class PanelController: ObservableObject {
         }
     }
 
+    /// 完全穿透（锁定）：连歌词文字上也点不到；平时空白区域本来就自动穿透
     @Published var clickThrough: Bool {
         didSet {
             UserDefaults.standard.set(clickThrough, forKey: "clickThrough")
-            panel?.ignoresMouseEvents = clickThrough
         }
     }
 
     private var panel: LyricsPanel?
+    private var mouseTimer: Timer?
 
     /// 悬浮窗宽度（固定值，供歌词排版计算字号用，避免运行时 GeometryReader 测量）
     private(set) var panelWidth: CGFloat = 920
+
+    /// 当前歌词内容的可交互区域信息（由 OverlayView 汇报）
+    private var interactiveTextWidth: CGFloat = .infinity
+    private var interactiveBandTop: CGFloat = 0
+    private var interactiveBandHeight: CGFloat = 9999
 
     private init() {
         isVisible = UserDefaults.standard.object(forKey: "panelVisible") as? Bool ?? true
@@ -56,20 +62,56 @@ final class PanelController: ObservableObject {
     }
 
     func setUp() {
-        let size = NSSize(width: 920, height: 170)
+        let size = NSSize(width: 920, height: 260)
         let screen = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
-        let origin = NSPoint(x: screen.midX - size.width / 2, y: screen.minY + 84)
+        let origin = NSPoint(x: screen.midX - size.width / 2, y: screen.minY + 70)
         let panel = LyricsPanel(contentRect: NSRect(origin: origin, size: size))
-        panel.setFrameAutosaveName("LyricsPanelFrame.v2")
+        panel.setFrameAutosaveName("LyricsPanelFrame.v3")
         // 不裁剪超出边界的绘制，否则文字阴影/光晕会被窗口边缘切成方形
         let hosting = NSHostingView(rootView: OverlayView())
         hosting.wantsLayer = true
         hosting.layer?.masksToBounds = false
         panel.contentView = hosting
-        panel.ignoresMouseEvents = clickThrough
         panelWidth = panel.frame.width
         self.panel = panel
         apply()
+
+        // 智能穿透：20 次/秒检查鼠标是否悬在歌词文字附近
+        let timer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { [weak self] _ in
+            self?.updateMouseThrough()
+        }
+        timer.tolerance = 0.02
+        mouseTimer = timer
+    }
+
+    /// OverlayView 每次换行时汇报当前文字宽度和内容布局，用于计算可交互区域
+    func updateContentMetrics(fontSize: CGFloat, showTranslation: Bool, textWidth: CGFloat) {
+        let lineHeight = fontSize * 2.9
+        let translationHeight = showTranslation ? fontSize * 0.95 : 0
+        let nextHeight = fontSize * 1.25
+        let contentHeight = lineHeight + translationHeight + nextHeight
+        let panelHeight = panel?.frame.height ?? 260
+        interactiveBandTop = (panelHeight - contentHeight) / 2
+        interactiveBandHeight = lineHeight + translationHeight
+        interactiveTextWidth = textWidth
+    }
+
+    private func updateMouseThrough() {
+        guard let panel, isVisible else { return }
+        if clickThrough {
+            panel.ignoresMouseEvents = true
+            return
+        }
+        let mouse = NSEvent.mouseLocation
+        let frame = panel.frame
+        let bandWidth = min(frame.width, interactiveTextWidth + 80)
+        let band = NSRect(
+            x: frame.midX - bandWidth / 2,
+            y: frame.maxY - interactiveBandTop - interactiveBandHeight,
+            width: bandWidth,
+            height: interactiveBandHeight
+        )
+        panel.ignoresMouseEvents = !band.contains(mouse)
     }
 
     func toggleVisible() {

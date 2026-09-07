@@ -1,19 +1,32 @@
 import SwiftUI
 import AppKit
 
-/// 桌面歌词：纯文字、微透、无边框；换行时做 Apple 风格的柔和过渡。
+/// 桌面歌词：纯文字、微透、无边框；换行以「向上滚动一格」接力。
 ///
 /// 渲染铁律（血泪教训）：
 /// 1. 不用 .shadow —— 它挂在文字大小的图层上向外画，动画合成时会被贴字裁剪；
 ///    阴影一律用「黑色模糊副本垫底」画成普通内容（辉光同理）。
 /// 2. 模糊/阴影副本都放在带内边距的容器里，先 padding 后 blur，永不越界。
-/// 3. 排版先测量、算好字号再排，不做越界布局；主/预告句槽位高度固定，版面永不跳动。
+/// 3. 不用 GeometryReader（退场动画期间会塌陷）；排版用固定窗宽预测量字号。
+/// 4. 槽位高度只随设置变化，不随歌曲内容变化，版面永不跳动。
 struct OverlayView: View {
     @ObservedObject private var player = PlayerEngine.shared
     @ObservedObject private var lyricsEngine = LyricsEngine.shared
 
-    /// 歌词整体时间偏移（秒，正值 = 提前显示）；默认补偿链路延迟
     @AppStorage("lyricsOffset") private var lyricsOffset: Double = 0.12
+    @AppStorage("fontSize") private var fontSize: Double = 32
+    @AppStorage("showPreview") private var showPreview = true
+    @AppStorage("showTranslation") private var showTranslation = true
+    @AppStorage("lyricTint") private var tintRaw = LyricTint.white.rawValue
+
+    private var tint: Color { (LyricTint(rawValue: tintRaw) ?? .white).color }
+    private var lineHeight: CGFloat { fontSize * 2.9 }
+    private var translationHeight: CGFloat { fontSize * 0.95 }
+    private var nextHeight: CGFloat { fontSize * 1.25 }
+    /// 滚动换行的行程：预告句中心到主句中心的距离
+    private var scrollDistance: CGFloat {
+        (lineHeight + nextHeight) / 2 + (showTranslation ? translationHeight : 0)
+    }
 
     /// 刷新率：逐字 60fps（动画平滑），逐行 30fps，暂停 10fps
     private var tickInterval: Double {
@@ -69,36 +82,72 @@ struct OverlayView: View {
         let position = player.currentPosition(at: date) + lyricsOffset
         let index = lyrics.currentIndex(at: position)
         return VStack(spacing: 0) {
-            // 主句槽位：高度恒定，主句出现/消失时版面不跳动
+            // 主句槽位（高度恒定）
             ZStack {
                 if let index {
                     let line = lyrics.lines[index]
                     Group {
                         if let words = line.words, !words.isEmpty {
-                            KaraokeLine(words: words, lineBegin: line.begin, position: position)
-                                .transition(.karaokeSwap)
+                            KaraokeLine(
+                                words: words, lineBegin: line.begin, position: position,
+                                fontSize: fontSize, tint: tint
+                            )
                         } else {
                             mainLine(line.text)
-                                .transition(.lyricMain)
                         }
                     }
                     .id(index)
+                    .transition(.riseIn(from: scrollDistance))
                 }
             }
-            .frame(height: 94)
-            // 预告句槽位：同样恒定
+            .frame(height: lineHeight)
+            .contentShape(Rectangle())
+            .onTapGesture(count: 2) {
+                // 双击：回到本句开头重唱
+                if let index {
+                    PlayerEngine.shared.seek(to: max(0, lyrics.lines[index].begin - 0.1))
+                }
+            }
+            // 翻译槽位（开关控制，高度恒定）
+            if showTranslation {
+                ZStack {
+                    if let index, let translation = lyrics.lines[index].translation {
+                        translationLine(translation)
+                            .id("tr-\(index)")
+                            .transition(.opacity)
+                    }
+                }
+                .frame(height: translationHeight)
+            }
+            // 预告句槽位（高度恒定）
             ZStack {
-                if let next = nextEntry(lyrics, index: index, position: position) {
+                if showPreview, let next = nextEntry(lyrics, index: index, position: position) {
                     nextLine(next.text)
                         .opacity(next.reveal)
                         .offset(y: 8 * (1 - next.reveal))
                         .id(next.id)
-                        .transition(.lyricNext)
+                        .transition(.opacity)
                 }
             }
-            .frame(height: 40)
+            .frame(height: nextHeight)
         }
         .animation(.easeOut(duration: 0.4), value: index)
+        .onChange(of: index) { _, newIndex in
+            reportMetrics(lyrics, index: newIndex)
+        }
+        .onAppear {
+            reportMetrics(lyrics, index: index)
+        }
+    }
+
+    /// 向窗口控制器汇报当前文字宽度（智能穿透用：只有文字附近可点击）
+    private func reportMetrics(_ lyrics: Lyrics, index: Int?) {
+        let text = index.map { lyrics.lines[$0].text } ?? lyrics.lines.first?.text ?? ""
+        let natural = TextMeasure.width(of: text, size: fontSize)
+        let width = min(natural, PanelController.shared.panelWidth - 56)
+        PanelController.shared.updateContentMetrics(
+            fontSize: fontSize, showTranslation: showTranslation, textWidth: width
+        )
     }
 
     /// 下一句预告：当前句唱到后半段，用 0.6s 从下方缓缓淡入（前奏期间直接预告第一句）
@@ -122,7 +171,7 @@ struct OverlayView: View {
         return t * t * (3 - 2 * t)
     }
 
-    /// 三层文字：宽黑影（氛围）→ 紧黑影（描边感）→ 白色正文。
+    /// 三层文字：宽黑影（氛围）→ 紧黑影（描边感）→ 染色正文。
     /// 阴影是内容不是特效，任何合成时机都不会被裁。
     private func layeredText(
         _ text: String, size: CGFloat, weight: Font.Weight, textOpacity: Double,
@@ -143,18 +192,24 @@ struct OverlayView: View {
         return ZStack {
             copy(.black.opacity(wideOpacity)).blur(radius: wideBlur)
             copy(.black.opacity(crispOpacity)).offset(y: 1).blur(radius: crispBlur)
-            copy(.white.opacity(textOpacity))
+            copy(tint.opacity(textOpacity))
         }
         .frame(maxWidth: .infinity)
     }
 
     private func mainLine(_ text: String) -> some View {
-        layeredText(text, size: 32, weight: .bold, textOpacity: 0.92,
-                    hPad: 28, vPad: 14, minScale: 0.5, crispBlur: 2.5, wideBlur: 7)
+        layeredText(text, size: fontSize, weight: .bold, textOpacity: 0.92,
+                    hPad: 28, vPad: fontSize * 0.44, minScale: 0.5, crispBlur: 2.5, wideBlur: 7)
+    }
+
+    private func translationLine(_ text: String) -> some View {
+        layeredText(text, size: fontSize * 0.5, weight: .semibold, textOpacity: 0.6,
+                    hPad: 28, vPad: 4, minScale: 0.6, crispBlur: 1.5, wideBlur: 4,
+                    crispOpacity: 0.15, wideOpacity: 0.2)
     }
 
     private func nextLine(_ text: String) -> some View {
-        layeredText(text, size: 17, weight: .semibold, textOpacity: 0.55,
+        layeredText(text, size: fontSize * 0.53, weight: .semibold, textOpacity: 0.55,
                     hPad: 28, vPad: 8, minScale: 0.6, crispBlur: 1.5, wideBlur: 4,
                     crispOpacity: 0.12, wideOpacity: 0.2)
     }
@@ -165,50 +220,52 @@ struct OverlayView: View {
     }
 }
 
-// MARK: - 逐字卡拉OK（扫亮 + 波浪上浮 + 瀑布入场 + 整行辉光）
+// MARK: - 逐字卡拉OK（雾聚拢 + 波浪浮沉 + 瀑布入场 + 整行辉光）
 
-/// 一行逐字歌词。四层同构渲染：宽黑影 → 紧黑影 → 白色辉光 → 渐变正文，
-/// 每层都是整行副本（同字号、同上浮位移），阴影辉光全部画成内容。
+/// 一行逐字歌词。五层同构渲染，全部按播放时钟的纯函数驱动。
 private struct KaraokeLine: View {
     let words: [LyricWord]
     let lineBegin: Double
     let position: Double
+    let fontSize: Double
+    let tint: Color
 
-    private static let baseSize: CGFloat = 32
     private static var sizeCache: [String: CGFloat] = [:]
 
     private enum RowStyle {
-        case wideShadow   // 氛围软影（整行常驻）
-        case crispShadow  // 描边影（只在唱到后浮现）
+        case wideShadow   // 氛围软影（唱到后浮现）
+        case crispShadow  // 描边影（唱到后浮现）
         case glow         // 唱到的字的辉光
-        case mainBlur     // 未唱：模糊的白字（失焦态）
-        case mainSharp    // 唱到/唱过：清晰字（带扫亮）
+        case mainBlur     // 未唱：模糊的雾（失焦态）
+        case mainSharp    // 聚拢即全亮的清晰字
     }
 
     var body: some View {
-        let fontSize = Self.fittedFontSize(
+        let fitted = Self.fittedFontSize(
             for: words.map(\.text).joined(),
-            maxWidth: max(60, PanelController.shared.panelWidth - 64)
+            maxWidth: max(60, PanelController.shared.panelWidth - 64),
+            base: fontSize
         )
+        let hPad: CGFloat = 26
+        let vPad: CGFloat = fontSize * 0.69
         return ZStack {
-                row(.wideShadow, fontSize: fontSize)
-                    .padding(.horizontal, 26).padding(.vertical, 22)
-                    .blur(radius: 9)
-                row(.crispShadow, fontSize: fontSize)
-                    .padding(.horizontal, 26).padding(.vertical, 22)
-                    .offset(y: 1)
-                    .blur(radius: 2.5)
-                row(.glow, fontSize: fontSize)
-                    .padding(.horizontal, 26).padding(.vertical, 22)
-                    .blur(radius: 8)
-                row(.mainBlur, fontSize: fontSize)
-                    .padding(.horizontal, 26).padding(.vertical, 22)
-                    .blur(radius: 2)
-                row(.mainSharp, fontSize: fontSize)
-                    .padding(.horizontal, 26).padding(.vertical, 22)
+            row(.wideShadow, fontSize: fitted)
+                .padding(.horizontal, hPad).padding(.vertical, vPad)
+                .blur(radius: 9)
+            row(.crispShadow, fontSize: fitted)
+                .padding(.horizontal, hPad).padding(.vertical, vPad)
+                .offset(y: 1)
+                .blur(radius: 2.5)
+            row(.glow, fontSize: fitted)
+                .padding(.horizontal, hPad).padding(.vertical, vPad)
+                .blur(radius: 8)
+            row(.mainBlur, fontSize: fitted)
+                .padding(.horizontal, hPad).padding(.vertical, vPad)
+                .blur(radius: 2)
+            row(.mainSharp, fontSize: fitted)
+                .padding(.horizontal, hPad).padding(.vertical, vPad)
         }
         .frame(maxWidth: .infinity)
-        .frame(height: 94)
     }
 
     private func row(_ style: RowStyle, fontSize: CGFloat) -> some View {
@@ -236,13 +293,13 @@ private struct KaraokeLine: View {
             Text(word.text).font(font).foregroundStyle(.black.opacity(0.5))
                 .opacity(focus)
         case .glow:
-            Text(word.text).font(font).foregroundStyle(.white)
+            Text(word.text).font(font).foregroundStyle(tint)
                 .opacity(0.65 * active)
         case .mainBlur:
-            Text(word.text).font(font).foregroundStyle(.white.opacity(0.5))
+            Text(word.text).font(font).foregroundStyle(tint.opacity(0.5))
                 .opacity(1 - focus)
         case .mainSharp:
-            Text(word.text).font(font).foregroundStyle(.white)
+            Text(word.text).font(font).foregroundStyle(tint)
                 .opacity(focus)
         }
     }
@@ -254,15 +311,11 @@ private struct KaraokeLine: View {
     }
 
     /// 按整行文字宽度算出不越界的字号（结果缓存，每行只算一次）
-    private static func fittedFontSize(for text: String, maxWidth: CGFloat) -> CGFloat {
-        let key = "\(Int(maxWidth))|\(text)"
+    private static func fittedFontSize(for text: String, maxWidth: CGFloat, base: Double) -> CGFloat {
+        let key = "\(Int(base))|\(Int(maxWidth))|\(text)"
         if let cached = sizeCache[key] { return cached }
-        let descriptor = NSFont.systemFont(ofSize: baseSize, weight: .bold)
-            .fontDescriptor.withDesign(.rounded)
-        let font = descriptor.flatMap { NSFont(descriptor: $0, size: baseSize) }
-            ?? NSFont.systemFont(ofSize: baseSize, weight: .bold)
-        let width = (text as NSString).size(withAttributes: [.font: font]).width
-        let size = width > maxWidth ? max(16, baseSize * maxWidth / width) : baseSize
+        let width = TextMeasure.width(of: text, size: base)
+        let size = width > maxWidth ? max(14, base * maxWidth / width) : base
         if sizeCache.count > 500 { sizeCache.removeAll() }
         sizeCache[key] = size
         return size
@@ -273,7 +326,7 @@ private struct KaraokeLine: View {
         smoothstep((position - lineBegin + 0.12 - Double(index) * 0.04) / 0.35)
     }
 
-    /// 词内演唱进度 0..1（驱动从左到右的扫亮）
+    /// 词内演唱进度 0..1
     private func progress(_ word: LyricWord) -> Double {
         guard word.end > word.begin else { return position >= word.begin ? 1 : 0 }
         return min(1, max(0, (position - word.begin) / (word.end - word.begin)))
@@ -301,6 +354,26 @@ private struct KaraokeLine: View {
     }
 }
 
+// MARK: - 文字测量
+
+/// 统一的文字宽度测量（bold rounded 字体，带缓存）
+enum TextMeasure {
+    private static var cache: [String: CGFloat] = [:]
+
+    static func width(of text: String, size: CGFloat) -> CGFloat {
+        let key = "\(Int(size))|\(text)"
+        if let cached = cache[key] { return cached }
+        let descriptor = NSFont.systemFont(ofSize: size, weight: .bold)
+            .fontDescriptor.withDesign(.rounded)
+        let font = descriptor.flatMap { NSFont(descriptor: $0, size: size) }
+            ?? NSFont.systemFont(ofSize: size, weight: .bold)
+        let width = (text as NSString).size(withAttributes: [.font: font]).width
+        if cache.count > 600 { cache.removeAll() }
+        cache[key] = width
+        return width
+    }
+}
+
 // MARK: - 过渡动画
 
 private struct LyricTransitionModifier: ViewModifier {
@@ -325,31 +398,17 @@ extension AnyTransition {
         identity: LyricTransitionModifier(opacity: 1, y: 0, blur: 0, scale: 1)
     )
 
-    /// 换行 = 向上滚动一格：新句从预告句的位置（下方 67px）半亮升入主位，
-    /// 旧句同步向上淡出——和 Apple Music 内部歌词的滚动一致
-    static let lyricMain = AnyTransition.asymmetric(
-        insertion: .modifier(
-            active: LyricTransitionModifier(opacity: 0, y: 67, blur: 0, scale: 1),
-            identity: LyricTransitionModifier(opacity: 1, y: 0, blur: 0, scale: 1)
-        ),
-        removal: .modifier(
-            active: LyricTransitionModifier(opacity: 0, y: -34, blur: 0, scale: 1),
-            identity: LyricTransitionModifier(opacity: 1, y: 0, blur: 0, scale: 1)
+    /// 换行 = 向上滚动一格：新句从预告句位置完全透明地升入渐显，旧句向上淡出
+    static func riseIn(from distance: CGFloat) -> AnyTransition {
+        .asymmetric(
+            insertion: .modifier(
+                active: LyricTransitionModifier(opacity: 0, y: distance, blur: 0, scale: 1),
+                identity: LyricTransitionModifier(opacity: 1, y: 0, blur: 0, scale: 1)
+            ),
+            removal: .modifier(
+                active: LyricTransitionModifier(opacity: 0, y: -distance * 0.5, blur: 0, scale: 1),
+                identity: LyricTransitionModifier(opacity: 1, y: 0, blur: 0, scale: 1)
+            )
         )
-    )
-
-    /// 逐字句：同样滚动一格升入，字级瀑布动画在升入过程中同步展开
-    static let karaokeSwap = AnyTransition.asymmetric(
-        insertion: .modifier(
-            active: LyricTransitionModifier(opacity: 0, y: 67, blur: 0, scale: 1),
-            identity: LyricTransitionModifier(opacity: 1, y: 0, blur: 0, scale: 1)
-        ),
-        removal: .modifier(
-            active: LyricTransitionModifier(opacity: 0, y: -34, blur: 0, scale: 1),
-            identity: LyricTransitionModifier(opacity: 1, y: 0, blur: 0, scale: 1)
-        )
-    )
-
-    /// 预告句：出现由时钟中点淡入驱动；换行时快速淡出，把位置交给升入的主句
-    static let lyricNext = AnyTransition.opacity
+    }
 }

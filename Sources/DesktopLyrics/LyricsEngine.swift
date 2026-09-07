@@ -118,7 +118,7 @@ final class LyricsEngine: ObservableObject {
             let noneURL = cacheURL(songID: songID, ext: "none")
             if let cached = try? String(contentsOf: ttmlURL, encoding: .utf8),
                let lyrics = TTMLParser.parse(cached) {
-                DebugLog.log("[歌词] 命中缓存：\(track.name)（\(lyrics.lines.count) 行，逐字=\(lyrics.wordTimed)）")
+                DebugLog.log("[歌词] 命中缓存：\(track.name)（\(lyrics.lines.count) 行，逐字=\(lyrics.wordTimed)，翻译=\(lyrics.lines.filter { $0.translation != nil }.count) 行）")
                 return .ready(lyrics)
             }
             if fm.fileExists(atPath: noneURL.path) { return .unavailable }
@@ -134,7 +134,7 @@ final class LyricsEngine: ObservableObject {
                 DebugLog.log("[歌词] TTML 解析失败：\(track.name)")
                 return .unavailable
             }
-            DebugLog.log("[歌词] 已取到：\(track.name)（\(lyrics.lines.count) 行，逐字=\(lyrics.wordTimed)）")
+            DebugLog.log("[歌词] 已取到：\(track.name)（\(lyrics.lines.count) 行，逐字=\(lyrics.wordTimed)，翻译=\(lyrics.lines.filter { $0.translation != nil }.count) 行）")
             return .ready(lyrics)
         } catch AMError.needsLogin {
             return .needsLogin

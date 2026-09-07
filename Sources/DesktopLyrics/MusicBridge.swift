@@ -71,6 +71,12 @@ final class MusicBridge {
         sbApp?.playerPosition
     }
 
+    /// 跳转播放位置（双击歌词回到本句用）
+    func seek(to seconds: Double) {
+        guard let app = sbApp as? NSObject else { return }
+        app.setValue(seconds, forKey: "playerPosition")
+    }
+
     /// 全量快照：状态 + 进度 + 当前曲目
     func snapshot() -> PlayerSnapshot? {
         guard let app = sbApp else { return nil }

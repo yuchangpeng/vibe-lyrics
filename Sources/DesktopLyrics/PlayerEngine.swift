@@ -131,6 +131,15 @@ final class PlayerEngine: ObservableObject {
         }
     }
 
+    /// 跳转播放位置并立即校准本地时钟（双击歌词回本句用）
+    func seek(to seconds: Double) {
+        bridge.seek(to: seconds)
+        basePosition = seconds
+        baseDate = Date()
+        backwardStreak = 0
+        DebugLog.log("[引擎] 跳转到 \(String(format: "%.1f", seconds))s")
+    }
+
     private func setStopped() {
         musicRunning = bridge.isMusicRunning
         isPlaying = false
