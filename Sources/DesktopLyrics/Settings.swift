@@ -36,6 +36,7 @@ struct SettingsView: View {
     @ObservedObject private var panelController = PanelController.shared
     @AppStorage("autoHideOnPause") private var autoHideOnPause = true
     @AppStorage("screensaverEnabled") private var screensaverEnabled = true
+    @AppStorage("screensaverIdleSeconds") private var screensaverIdle = 60.0
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
 
     var body: some View {
@@ -75,7 +76,14 @@ struct SettingsView: View {
             Section("行为") {
                 Toggle("完全穿透（锁定歌词条）", isOn: $panelController.clickThrough)
                 Toggle("暂停 10 秒后自动隐藏歌词", isOn: $autoHideOnPause)
-                Toggle("闲置 1 分钟进入歌词屏保", isOn: $screensaverEnabled)
+                Toggle("闲置后进入歌词屏保", isOn: $screensaverEnabled)
+                Picker("屏保等待时间", selection: $screensaverIdle) {
+                    Text("30 秒").tag(30.0)
+                    Text("1 分钟").tag(60.0)
+                    Text("2 分钟").tag(120.0)
+                    Text("5 分钟").tag(300.0)
+                }
+                .disabled(!screensaverEnabled)
                 Toggle("开机自动启动", isOn: $launchAtLogin)
                     .onChange(of: launchAtLogin) { _, enabled in
                         do {
