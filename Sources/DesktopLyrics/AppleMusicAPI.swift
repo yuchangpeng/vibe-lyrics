@@ -77,6 +77,22 @@ final class AppleMusicAPI {
         return nil
     }
 
+    /// 曲目封面 URL（600×600，分享卡用）
+    func artworkURL(songID: String) async throws -> URL? {
+        let sf = try await storefront()
+        let data = try await authedRequest(path: "/v1/catalog/\(sf)/songs/\(songID)")
+        guard let obj = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let arr = obj["data"] as? [[String: Any]],
+              let attrs = arr.first?["attributes"] as? [String: Any],
+              let artwork = attrs["artwork"] as? [String: Any],
+              let template = artwork["url"] as? String else { return nil }
+        let urlString = template
+            .replacingOccurrences(of: "{w}", with: "600")
+            .replacingOccurrences(of: "{h}", with: "600")
+            .replacingOccurrences(of: "{f}", with: "jpg")
+        return URL(string: urlString)
+    }
+
     /// 按元数据搜索曲目目录 ID（拿不到 Store URL 时的兜底）
     func searchSongID(name: String, artist: String, album: String, duration: Double) async throws -> String? {
         let sf = try await storefront()

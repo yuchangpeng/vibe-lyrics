@@ -67,6 +67,11 @@ final class LyricsEngine: ObservableObject {
         fetch(track)
     }
 
+    /// 当前曲目已解析出的 Apple 目录 ID（分享卡取封面用）
+    func cachedSongID(for track: TrackInfo) -> String? {
+        idIndex[key(for: track)]
+    }
+
     private func key(for t: TrackInfo) -> String {
         t.id.isEmpty ? "\(t.name)|\(t.artist)|\(t.album)" : t.id
     }
