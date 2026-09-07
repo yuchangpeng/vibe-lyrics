@@ -5,6 +5,8 @@ import KeyboardShortcuts
 extension KeyboardShortcuts.Name {
     /// 一键隐藏/显示桌面歌词（默认 ⌥⌘L）
     static let toggleLyrics = Self("toggleLyrics", default: .init(.l, modifiers: [.option, .command]))
+    /// 完全穿透（锁定歌词）开关（默认 ⌥⌘K）
+    static let toggleClickThrough = Self("toggleClickThrough", default: .init(.k, modifiers: [.option, .command]))
 }
 
 @main
@@ -36,7 +38,7 @@ struct DesktopLyricsApp: App {
             Button(panelController.isVisible ? "隐藏歌词（⌥⌘L）" : "显示歌词（⌥⌘L）") {
                 panelController.toggleVisible()
             }
-            Toggle("完全穿透（歌词上也点不到）", isOn: $panelController.clickThrough)
+            Toggle("完全穿透（⌥⌘K）", isOn: $panelController.clickThrough)
             SettingsLink {
                 Text("设置…")
             }
@@ -60,6 +62,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         AppleMusicAuth.shared.checkUserTokenAtLaunch()
         KeyboardShortcuts.onKeyDown(for: .toggleLyrics) {
             PanelController.shared.toggleVisible()
+        }
+        KeyboardShortcuts.onKeyDown(for: .toggleClickThrough) {
+            PanelController.shared.clickThrough.toggle()
+            DebugLog.log("[App] 快捷键切换完全穿透：\(PanelController.shared.clickThrough ? "开" : "关")")
         }
         DebugLog.log("[App] Vibe Lyrics 已启动")
     }

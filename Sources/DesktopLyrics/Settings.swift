@@ -1,5 +1,6 @@
 import SwiftUI
 import ServiceManagement
+import KeyboardShortcuts
 
 /// 歌词颜色预设（阴影恒为黑，只染文字/雾/辉光）
 enum LyricTint: String, CaseIterable {
@@ -65,8 +66,12 @@ struct SettingsView: View {
                         .foregroundStyle(.secondary)
                 }
             }
+            Section("快捷键") {
+                KeyboardShortcuts.Recorder("显示 / 隐藏歌词", name: .toggleLyrics)
+                KeyboardShortcuts.Recorder("完全穿透（锁定）", name: .toggleClickThrough)
+            }
             Section("行为") {
-                Toggle("鼠标穿透（锁定歌词条）", isOn: $panelController.clickThrough)
+                Toggle("完全穿透（锁定歌词条）", isOn: $panelController.clickThrough)
                 Toggle("开机自动启动", isOn: $launchAtLogin)
                     .onChange(of: launchAtLogin) { _, enabled in
                         do {
