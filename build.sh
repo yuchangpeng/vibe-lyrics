@@ -14,6 +14,8 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS"
 cp .build/release/DesktopLyrics "$APP/Contents/MacOS/DesktopLyrics"
 cp Support/Info.plist "$APP/Contents/Info.plist"
+mkdir -p "$APP/Contents/Resources"
+cp icon/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 
 echo "▸ 签名（ad-hoc）…"
 codesign --force --sign - "$APP"

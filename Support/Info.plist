@@ -6,6 +6,8 @@
 	<string>zh_CN</string>
 	<key>CFBundleExecutable</key>
 	<string>DesktopLyrics</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
 	<key>CFBundleIdentifier</key>
 	<string>com.chendiqin.desktop-lyrics</string>
 	<key>CFBundleInfoDictionaryVersion</key>

@@ -20,6 +20,7 @@ let window = NSWindow(
     styleMask: [.borderless], backing: .buffered, defer: false
 )
 let webView = WKWebView(frame: NSRect(x: 0, y: 0, width: width, height: height))
+webView.setValue(false, forKey: "drawsBackground") // 透明背景（图标等场景）
 window.contentView = webView
 
 final class SnapDelegate: NSObject, WKNavigationDelegate {
