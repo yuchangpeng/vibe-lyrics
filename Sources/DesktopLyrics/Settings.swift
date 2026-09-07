@@ -35,6 +35,7 @@ struct SettingsView: View {
     @AppStorage("lyricTint") private var tintRaw = LyricTint.white.rawValue
     @ObservedObject private var panelController = PanelController.shared
     @AppStorage("autoHideOnPause") private var autoHideOnPause = true
+    @AppStorage("screensaverEnabled") private var screensaverEnabled = true
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
 
     var body: some View {
@@ -74,6 +75,7 @@ struct SettingsView: View {
             Section("行为") {
                 Toggle("完全穿透（锁定歌词条）", isOn: $panelController.clickThrough)
                 Toggle("暂停 10 秒后自动隐藏歌词", isOn: $autoHideOnPause)
+                Toggle("闲置 1 分钟进入歌词屏保", isOn: $screensaverEnabled)
                 Toggle("开机自动启动", isOn: $launchAtLogin)
                     .onChange(of: launchAtLogin) { _, enabled in
                         do {

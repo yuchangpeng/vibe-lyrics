@@ -109,7 +109,8 @@ struct OverlayView: View {
                         if let words = line.words, !words.isEmpty {
                             KaraokeLine(
                                 words: words, lineBegin: line.begin, position: position,
-                                fontSize: fontSize, tint: tint
+                                fontSize: fontSize, tint: tint,
+                                maxWidth: PanelController.shared.panelWidth - 64
                             )
                         } else {
                             mainLine(line.text)
@@ -244,12 +245,13 @@ struct OverlayView: View {
 // MARK: - 逐字卡拉OK（雾聚拢 + 波浪浮沉 + 瀑布入场 + 整行辉光）
 
 /// 一行逐字歌词。五层同构渲染，全部按播放时钟的纯函数驱动。
-private struct KaraokeLine: View {
+struct KaraokeLine: View {
     let words: [LyricWord]
     let lineBegin: Double
     let position: Double
     let fontSize: Double
     let tint: Color
+    var maxWidth: CGFloat = 856
 
     private static var sizeCache: [String: CGFloat] = [:]
 
@@ -264,7 +266,7 @@ private struct KaraokeLine: View {
     var body: some View {
         let fitted = Self.fittedFontSize(
             for: words.map(\.text).joined(),
-            maxWidth: max(60, PanelController.shared.panelWidth - 64),
+            maxWidth: max(60, maxWidth),
             base: fontSize
         )
         let hPad: CGFloat = 26

@@ -77,6 +77,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         PlayerEngine.shared.start()
         LyricsEngine.shared.start()
         AppleMusicAuth.shared.checkUserTokenAtLaunch()
+        ScreensaverController.shared.start()
         KeyboardShortcuts.onKeyDown(for: .toggleLyrics) {
             PanelController.shared.toggleVisible()
         }
