@@ -47,6 +47,8 @@ final class PanelController: ObservableObject {
 
     private(set) var panel: LyricsPanel?
     private var mouseTimer: Timer?
+    /// 用户亲手放置的位置；外力（系统吸附/窗口工具）移动会被还原到这里
+    private var lastUserFrame: NSRect = .zero
 
     /// 悬浮窗宽度（固定值，供歌词排版计算字号用，避免运行时 GeometryReader 测量）
     private(set) var panelWidth: CGFloat = 920
@@ -75,10 +77,11 @@ final class PanelController: ObservableObject {
         panelWidth = panel.frame.width
         self.panel = panel
         DebugLog.log("[面板] 初始 frame=\(NSStringFromRect(panel.frame))")
+        lastUserFrame = panel.frame
         NotificationCenter.default.addObserver(
             forName: NSWindow.didMoveNotification, object: panel, queue: .main
-        ) { _ in
-            DebugLog.log("[面板] 移动 -> \(NSStringFromRect(PanelController.shared.panel?.frame ?? .zero))")
+        ) { [weak self] _ in
+            self?.handlePanelMoved()
         }
         apply()
 
@@ -88,6 +91,19 @@ final class PanelController: ObservableObject {
         }
         timer.tolerance = 0.02
         mouseTimer = timer
+    }
+
+    /// 防外力移动：只有按着鼠标左键的拖动才算用户操作，其余一律还原
+    private func handlePanelMoved() {
+        guard let panel else { return }
+        let frame = panel.frame
+        if frame == lastUserFrame { return }
+        if NSEvent.pressedMouseButtons & 1 != 0 {
+            lastUserFrame = frame // 用户拖动中，记住新位置
+            return
+        }
+        DebugLog.log("[面板] 外力移动 -> \(NSStringFromRect(frame))，已还原")
+        panel.setFrame(lastUserFrame, display: true)
     }
 
     /// OverlayView 每次换行时汇报当前文字宽度和内容布局，用于计算可交互区域
