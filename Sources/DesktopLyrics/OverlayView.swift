@@ -303,7 +303,8 @@ private struct KaraokeLine: View {
                 let duration = word.end - word.begin
                 guard duration > 0.8 else { continue }
                 let t = position - word.begin
-                guard t > 0.1, t < duration + 0.4 else { continue }
+                // 音符结束后留足时间让最后一批粒子走完生命周期
+                guard t > 0.1, t < duration + 1.8 else { continue }
                 let centerX = xCursor + w / 2
                 let baseY = size.height / 2 - fitted * 0.15
                 var rng = UInt64(i &* 2654435761 &+ 97)
@@ -317,6 +318,9 @@ private struct KaraokeLine: View {
                     let birth = 0.1 + Double(particle) * 0.08 + r2 * 0.25
                     guard t > birth else { continue }
                     let age = (t - birth).truncatingRemainder(dividingBy: cycle)
+                    // 音符结束后不再新生粒子；已在飘的走完当前周期自然淡灭
+                    let incarnationStart = t - age
+                    guard incarnationStart < duration else { continue }
                     let life = age / cycle
                     let x = centerX + (r3 - 0.5) * w * 0.95 + sin((t + r2 * 7) * 2.6) * 2.5
                     let y = baseY - life * (12 + r1 * 16)
