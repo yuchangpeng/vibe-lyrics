@@ -9,8 +9,6 @@ final class ArtworkStore: ObservableObject {
     static let shared = ArtworkStore()
 
     @Published private(set) var image: NSImage?
-    /// 预模糊背景（后台一次性生成的小图，拉伸显示即重模糊，渲染零成本）
-    @Published private(set) var background: NSImage?
     /// 版本号：驱动新旧封面/背景交叉淡化
     @Published private(set) var version = 0
     private var loadedKey: String?
@@ -30,30 +28,12 @@ final class ArtworkStore: ObservableObject {
                 DebugLog.log("[屏保] 未取到封面")
                 return
             }
-            let bg = Self.tinyBackground(from: img)
             await MainActor.run {
                 guard let self, self.loadedKey == key else { return }
                 self.image = img
-                self.background = bg
                 self.version += 1
             }
         }
-    }
-
-    /// 把封面缩成 48px 小图：全屏拉伸显示时天然呈现重模糊效果
-    nonisolated private static func tinyBackground(from image: NSImage) -> NSImage? {
-        guard let cg = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return nil }
-        let w = 48, h = 30
-        guard let ctx = CGContext(
-            data: nil, width: w, height: h,
-            bitsPerComponent: 8, bytesPerRow: 0,
-            space: CGColorSpaceCreateDeviceRGB(),
-            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
-        ) else { return nil }
-        ctx.interpolationQuality = .high
-        ctx.draw(cg, in: CGRect(x: 0, y: 0, width: w, height: h))
-        guard let out = ctx.makeImage() else { return nil }
-        return NSImage(cgImage: out, size: NSSize(width: w, height: h))
     }
 }
 
@@ -229,12 +209,13 @@ struct ScreensaverView: View {
                 colors: [Color(red: 0.12, green: 0.13, blue: 0.17), Color(red: 0.04, green: 0.04, blue: 0.06)],
                 startPoint: .topLeading, endPoint: .bottomTrailing
             )
-            if let bg = artwork.background {
-                Image(nsImage: bg)
+            if let img = artwork.image {
+                Image(nsImage: img)
                     .resizable()
-                    .interpolation(.high)
                     .aspectRatio(contentMode: .fill)
                     .frame(width: screen.width, height: screen.height)
+                    .scaleEffect(1.4)
+                    .blur(radius: 100)
                     .saturation(1.5)
                     .id(artwork.version)
                     .transition(.opacity)
