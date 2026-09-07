@@ -45,7 +45,7 @@ final class PanelController: ObservableObject {
         }
     }
 
-    private var panel: LyricsPanel?
+    private(set) var panel: LyricsPanel?
     private var mouseTimer: Timer?
 
     /// 悬浮窗宽度（固定值，供歌词排版计算字号用，避免运行时 GeometryReader 测量）
@@ -74,6 +74,12 @@ final class PanelController: ObservableObject {
         panel.contentView = hosting
         panelWidth = panel.frame.width
         self.panel = panel
+        DebugLog.log("[面板] 初始 frame=\(NSStringFromRect(panel.frame))")
+        NotificationCenter.default.addObserver(
+            forName: NSWindow.didMoveNotification, object: panel, queue: .main
+        ) { _ in
+            DebugLog.log("[面板] 移动 -> \(NSStringFromRect(PanelController.shared.panel?.frame ?? .zero))")
+        }
         apply()
 
         // 智能穿透：20 次/秒检查鼠标是否悬在歌词文字附近

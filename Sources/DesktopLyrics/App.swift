@@ -5,8 +5,8 @@ import KeyboardShortcuts
 extension KeyboardShortcuts.Name {
     /// 一键隐藏/显示桌面歌词（默认 ⌥⌘L）
     static let toggleLyrics = Self("toggleLyrics", default: .init(.l, modifiers: [.option, .command]))
-    /// 完全穿透（锁定歌词）开关（默认 ⌥⌘K）
-    static let toggleClickThrough = Self("toggleClickThrough", default: .init(.k, modifiers: [.option, .command]))
+    /// 完全穿透（锁定歌词）开关（默认 ⇧⌥⌘L；⌥⌘K 常被窗口管理工具占用）
+    static let toggleClickThrough = Self("toggleClickThrough", default: .init(.l, modifiers: [.shift, .option, .command]))
 }
 
 @main
@@ -38,7 +38,7 @@ struct DesktopLyricsApp: App {
             Button(panelController.isVisible ? "隐藏歌词（⌥⌘L）" : "显示歌词（⌥⌘L）") {
                 panelController.toggleVisible()
             }
-            Toggle("完全穿透（⌥⌘K）", isOn: $panelController.clickThrough)
+            Toggle("完全穿透（⇧⌥⌘L）", isOn: $panelController.clickThrough)
             SettingsLink {
                 Text("设置…")
             }
