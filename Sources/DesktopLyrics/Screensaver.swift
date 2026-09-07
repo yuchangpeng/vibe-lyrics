@@ -9,6 +9,10 @@ final class ArtworkStore: ObservableObject {
     static let shared = ArtworkStore()
 
     @Published private(set) var image: NSImage?
+    /// 预模糊背景（后台一次性生成的小图，拉伸显示即重模糊，渲染零成本）
+    @Published private(set) var background: NSImage?
+    /// 版本号：驱动新旧封面/背景交叉淡化
+    @Published private(set) var version = 0
     private var loadedKey: String?
 
     private init() {}
@@ -17,7 +21,7 @@ final class ArtworkStore: ObservableObject {
         let key = "\(track.id)|\(track.name)"
         guard key != loadedKey else { return }
         loadedKey = key
-        image = nil
+        // 不清旧图：新图到了再交叉淡化，避免闪灰底
         Task { [weak self] in
             guard let songID = LyricsEngine.shared.cachedSongID(for: track),
                   let url = try? await AppleMusicAPI.shared.artworkURL(songID: songID),
@@ -26,23 +30,43 @@ final class ArtworkStore: ObservableObject {
                 DebugLog.log("[屏保] 未取到封面")
                 return
             }
+            let bg = Self.tinyBackground(from: img)
             await MainActor.run {
-                guard self?.loadedKey == key else { return }
-                self?.image = img
+                guard let self, self.loadedKey == key else { return }
+                self.image = img
+                self.background = bg
+                self.version += 1
             }
         }
+    }
+
+    /// 把封面缩成 48px 小图：全屏拉伸显示时天然呈现重模糊效果
+    nonisolated private static func tinyBackground(from image: NSImage) -> NSImage? {
+        guard let cg = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return nil }
+        let w = 48, h = 30
+        guard let ctx = CGContext(
+            data: nil, width: w, height: h,
+            bitsPerComponent: 8, bytesPerRow: 0,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else { return nil }
+        ctx.interpolationQuality = .high
+        ctx.draw(cg, in: CGRect(x: 0, y: 0, width: w, height: h))
+        guard let out = ctx.makeImage() else { return nil }
+        return NSImage(cgImage: out, size: NSSize(width: w, height: h))
     }
 }
 
 // MARK: - 屏保控制器：闲置 60 秒且在播放时进入，任何键鼠输入退出
 
 @MainActor
-final class ScreensaverController {
+final class ScreensaverController: ObservableObject {
     static let shared = ScreensaverController()
+
+    @Published private(set) var isActive = false
 
     private var window: NSWindow?
     private var timer: Timer?
-    private var active = false
     private var clickMonitor: Any?
 
     private init() {}
@@ -71,7 +95,7 @@ final class ScreensaverController {
     }
 
     private func tick() {
-        if active {
+        if isActive {
             // 任何输入、音乐没了 → 退出
             if idleSeconds < 1 || !PlayerEngine.shared.musicRunning || PlayerEngine.shared.track == nil {
                 hide()
@@ -113,7 +137,7 @@ final class ScreensaverController {
             win.animator().alphaValue = 1
         }
         window = win
-        active = true
+        isActive = true
         NSCursor.setHiddenUntilMouseMoves(true)
         // 点击立即退出（不等下一秒的轮询）
         clickMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .keyDown]) { [weak self] event in
@@ -124,8 +148,8 @@ final class ScreensaverController {
     }
 
     private func hide() {
-        guard active, let win = window else { return }
-        active = false
+        guard isActive, let win = window else { return }
+        isActive = false
         if let monitor = clickMonitor {
             NSEvent.removeMonitor(monitor)
             clickMonitor = nil
@@ -200,15 +224,24 @@ struct ScreensaverView: View {
 
     @ViewBuilder
     private var background: some View {
-        if let img = artwork.image {
-            Image(nsImage: img)
-                .resizable()
-                .aspectRatio(contentMode: .fill)
-                .frame(width: screen.width, height: screen.height)
-                .scaleEffect(1.4)
-                .blur(radius: 100)
-                .saturation(1.5)
-                .overlay(
+        ZStack {
+            LinearGradient(
+                colors: [Color(red: 0.12, green: 0.13, blue: 0.17), Color(red: 0.04, green: 0.04, blue: 0.06)],
+                startPoint: .topLeading, endPoint: .bottomTrailing
+            )
+            if let bg = artwork.background {
+                Image(nsImage: bg)
+                    .resizable()
+                    .interpolation(.high)
+                    .aspectRatio(contentMode: .fill)
+                    .frame(width: screen.width, height: screen.height)
+                    .saturation(1.5)
+                    .id(artwork.version)
+                    .transition(.opacity)
+            }
+        }
+        .animation(.easeInOut(duration: 0.9), value: artwork.version)
+        .overlay(
                     LinearGradient(
                         stops: [
                             .init(color: .black.opacity(0.45), location: 0),
@@ -218,12 +251,6 @@ struct ScreensaverView: View {
                         startPoint: .topLeading, endPoint: .bottomTrailing
                     )
                 )
-        } else {
-            LinearGradient(
-                colors: [Color(red: 0.12, green: 0.13, blue: 0.17), Color(red: 0.04, green: 0.04, blue: 0.06)],
-                startPoint: .topLeading, endPoint: .bottomTrailing
-            )
-        }
     }
 
     // MARK: 左列（封面卡 + 歌名歌手）
@@ -244,6 +271,8 @@ struct ScreensaverView: View {
                     .frame(height: 0, alignment: .top)
             }
             .rotationEffect(.degrees(-2.5))
+            .id(artwork.version)
+            .animation(.easeInOut(duration: 0.6), value: artwork.version)
             if let track = player.track {
                 Text(track.name)
                     .font(.system(size: 30, weight: .bold))

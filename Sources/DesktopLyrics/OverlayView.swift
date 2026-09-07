@@ -12,6 +12,7 @@ import AppKit
 struct OverlayView: View {
     @ObservedObject private var player = PlayerEngine.shared
     @ObservedObject private var lyricsEngine = LyricsEngine.shared
+    @ObservedObject private var screensaver = ScreensaverController.shared
 
     @AppStorage("lyricsOffset") private var lyricsOffset: Double = 0.12
     @AppStorage("fontSize") private var fontSize: Double = 32
@@ -26,6 +27,7 @@ struct OverlayView: View {
 
     /// 刷新率：逐字 60fps（动画平滑），逐行 30fps，暂停 10fps
     private var tickInterval: Double {
+        if screensaver.isActive { return 0.5 } // 屏保接管时歌词条被盖住，降频省负载
         guard case .ready(let lyrics) = lyricsEngine.status, player.isPlaying else { return 0.1 }
         return lyrics.wordTimed ? 1.0 / 60.0 : 1.0 / 30.0
     }
