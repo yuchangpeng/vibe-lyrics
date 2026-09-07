@@ -195,17 +195,19 @@ struct ShareCardView: View {
         VStack(spacing: 0) {
             VStack(spacing: 10) {
                 coverCard
-                coverCard
+                // 倒影：纯净副本（无阴影无描边），只画不占布局
+                coverBase
                     .scaleEffect(x: 1, y: -1)
-                    .frame(height: 84, alignment: .top)
-                    .clipped()
                     .mask(LinearGradient(
-                        colors: [.black.opacity(0.32), .clear],
+                        stops: [
+                            .init(color: .black.opacity(0.30), location: 0),
+                            .init(color: .clear, location: 0.30),
+                        ],
                         startPoint: .top, endPoint: .bottom
                     ))
+                    .frame(height: 0, alignment: .top)
             }
             .rotationEffect(.degrees(-2.5))
-            .padding(.bottom, -46)
             Text(title)
                 .font(.system(size: 27, weight: .bold))
                 .foregroundStyle(.white.opacity(0.96))
@@ -220,8 +222,18 @@ struct ShareCardView: View {
         }
     }
 
-    @ViewBuilder
     private var coverCard: some View {
+        coverBase
+            .overlay(
+                RoundedRectangle(cornerRadius: 22, style: .continuous)
+                    .stroke(.white.opacity(0.22), lineWidth: 1)
+            )
+            .shadow(color: .black.opacity(0.55), radius: 40, y: 17)
+            .shadow(color: .black.opacity(0.35), radius: 11, y: 3)
+    }
+
+    @ViewBuilder
+    private var coverBase: some View {
         Group {
             if let cover {
                 Image(nsImage: cover)
@@ -241,12 +253,6 @@ struct ShareCardView: View {
         }
         .frame(width: 316, height: 316)
         .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .stroke(.white.opacity(0.22), lineWidth: 1)
-        )
-        .shadow(color: .black.opacity(0.55), radius: 40, y: 17)
-        .shadow(color: .black.opacity(0.35), radius: 11, y: 3)
     }
 
     // MARK: 右列（冻结的卡拉OK瞬间）
