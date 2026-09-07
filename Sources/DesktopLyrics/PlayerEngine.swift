@@ -13,6 +13,8 @@ final class PlayerEngine: ObservableObject {
 
     /// 最近一次切歌通知里带的 Apple Music 目录 ID（歌词引擎精确取词用）
     private(set) var storeHint: (name: String, id: String)?
+    /// 切歌时刻（开场卡显示窗口期用）
+    private(set) var trackChangedAt = Date()
 
     private let bridge = MusicBridge()
     private var pollTimer: Timer?
@@ -123,6 +125,7 @@ final class PlayerEngine: ObservableObject {
         }
         if snap.track != track {
             track = snap.track
+            if snap.track != nil { trackChangedAt = Date() }
             if let t = snap.track {
                 DebugLog.log("[引擎] 当前曲目：\(t.name) — \(t.artist)（\(Int(t.duration)) 秒）")
             } else {

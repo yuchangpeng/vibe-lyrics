@@ -1,6 +1,7 @@
 import AppKit
 import SwiftUI
 import QuartzCore
+import Combine
 
 /// 无边框、不抢焦点、悬浮置顶的歌词窗
 final class LyricsPanel: NSPanel {
@@ -34,6 +35,7 @@ final class PanelController: ObservableObject {
     @Published var isVisible: Bool {
         didSet {
             UserDefaults.standard.set(isVisible, forKey: "panelVisible")
+            isAutoHidden = false
             apply()
         }
     }
@@ -47,6 +49,9 @@ final class PanelController: ObservableObject {
 
     private(set) var panel: LyricsPanel?
     private var mouseTimer: Timer?
+    private var bag = Set<AnyCancellable>()
+    private var autoHideWork: DispatchWorkItem?
+    private var isAutoHidden = false
     /// 用户亲手放置的位置；外力（系统吸附/窗口工具）移动会被还原到这里
     private var lastUserFrame: NSRect = .zero
 
@@ -91,6 +96,41 @@ final class PanelController: ObservableObject {
         }
         timer.tolerance = 0.02
         mouseTimer = timer
+
+        // 暂停 10 秒后自动隐身，恢复播放浮回（设置里可关）
+        PlayerEngine.shared.$isPlaying
+            .removeDuplicates()
+            .sink { [weak self] playing in
+                guard let self else { return }
+                self.autoHideWork?.cancel()
+                if playing {
+                    if self.isAutoHidden {
+                        self.isAutoHidden = false
+                        self.setPanelFaded(false)
+                    }
+                } else {
+                    let enabled = UserDefaults.standard.object(forKey: "autoHideOnPause") as? Bool ?? true
+                    guard enabled else { return }
+                    let work = DispatchWorkItem { [weak self] in
+                        guard let self, !PlayerEngine.shared.isPlaying, self.isVisible else { return }
+                        self.isAutoHidden = true
+                        self.setPanelFaded(true)
+                        DebugLog.log("[面板] 暂停超时，自动隐身")
+                    }
+                    self.autoHideWork = work
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 10, execute: work)
+                }
+            }
+            .store(in: &bag)
+    }
+
+    private func setPanelFaded(_ faded: Bool) {
+        guard let panel else { return }
+        NSAnimationContext.runAnimationGroup { ctx in
+            ctx.duration = faded ? 0.6 : 0.35
+            ctx.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            panel.animator().alphaValue = faded ? 0 : 1
+        }
     }
 
     /// 防外力移动：只有按着鼠标左键的拖动才算用户操作，其余一律还原
@@ -120,7 +160,7 @@ final class PanelController: ObservableObject {
 
     private func updateMouseThrough() {
         guard let panel, isVisible else { return }
-        if clickThrough {
+        if clickThrough || isAutoHidden {
             panel.ignoresMouseEvents = true
             return
         }

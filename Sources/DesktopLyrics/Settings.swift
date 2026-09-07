@@ -34,6 +34,7 @@ struct SettingsView: View {
     @AppStorage("showTranslation") private var showTranslation = true
     @AppStorage("lyricTint") private var tintRaw = LyricTint.white.rawValue
     @ObservedObject private var panelController = PanelController.shared
+    @AppStorage("autoHideOnPause") private var autoHideOnPause = true
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
 
     var body: some View {
@@ -72,6 +73,7 @@ struct SettingsView: View {
             }
             Section("行为") {
                 Toggle("完全穿透（锁定歌词条）", isOn: $panelController.clickThrough)
+                Toggle("暂停 10 秒后自动隐藏歌词", isOn: $autoHideOnPause)
                 Toggle("开机自动启动", isOn: $launchAtLogin)
                     .onChange(of: launchAtLogin) { _, enabled in
                         do {

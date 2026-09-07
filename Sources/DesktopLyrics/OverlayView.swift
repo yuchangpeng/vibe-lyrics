@@ -41,13 +41,19 @@ struct OverlayView: View {
         }
     }
 
-    /// 状态标识：曲目或歌词状态变化时，整块内容做柔和交叉过渡（切歌不硬切）
-    private var statusKey: String {
+    /// 开场卡窗口期：切歌后前 2.2 秒
+    private func introActive(at date: Date) -> Bool {
+        player.track != nil && date.timeIntervalSince(player.trackChangedAt) < 2.2
+    }
+
+    /// 状态标识：曲目、歌词状态或开场卡阶段变化时，整块内容做柔和交叉过渡
+    private func statusKey(at date: Date) -> String {
         let trackKey = player.track.map { "\($0.id)|\($0.name)" } ?? "none"
+        let phase = introActive(at: date) ? "#intro" : ""
         switch lyricsEngine.status {
-        case .ready: return trackKey + "#ready"
-        case .loading: return trackKey + "#loading"
-        case .unavailable: return trackKey + "#unavailable"
+        case .ready: return trackKey + phase + "#ready"
+        case .loading: return trackKey + phase + "#loading"
+        case .unavailable: return trackKey + phase + "#unavailable"
         case .needsLogin: return trackKey + "#login"
         case .idle: return trackKey + "#idle"
         }
@@ -56,26 +62,41 @@ struct OverlayView: View {
     @ViewBuilder
     private func content(at date: Date) -> some View {
         ZStack {
-            if player.track != nil {
+            if let track = player.track {
+                if introActive(at: date), lyricsEngine.status != .idle, lyricsEngine.status != .needsLogin {
+                    introCard(track)
+                        .id("intro-\(track.id)|\(track.name)")
+                        .transition(.statusSwap)
+                } else {
                 switch lyricsEngine.status {
                 case .ready(let lyrics):
                     lyricsView(lyrics, at: date)
-                        .id(statusKey)
+                        .id(statusKey(at: date))
                         .transition(.statusSwap)
                 case .needsLogin:
                     hint("需要连接 Apple Music 账号才能显示歌词 — 点菜单栏 ♪ 图标")
                         .transition(.statusSwap)
                 case .unavailable:
-                    if let track = player.track {
-                        hint("♪ \(track.name) — \(track.artist)")
-                            .transition(.statusSwap)
-                    }
+                    hint("♪ \(track.name) — \(track.artist)")
+                        .transition(.statusSwap)
                 case .idle, .loading:
                     EmptyView()
                 }
+                }
             }
         }
-        .animation(.easeInOut(duration: 0.4), value: statusKey)
+        .animation(.easeInOut(duration: 0.4), value: statusKey(at: date))
+    }
+
+    /// 切歌开场卡：歌名 + 歌手，两秒后交给歌词
+    private func introCard(_ track: TrackInfo) -> some View {
+        VStack(spacing: 8) {
+            layeredText(track.name, size: fontSize * 0.85, weight: .bold, textOpacity: 0.95,
+                        hPad: 28, vPad: 8, minScale: 0.5, crispBlur: 2, wideBlur: 6)
+            layeredText(track.artist, size: fontSize * 0.45, weight: .semibold, textOpacity: 0.55,
+                        hPad: 28, vPad: 4, minScale: 0.6, crispBlur: 1.5, wideBlur: 4,
+                        crispOpacity: 0.2, wideOpacity: 0.2)
+        }
     }
 
     private func lyricsView(_ lyrics: Lyrics, at date: Date) -> some View {
@@ -264,8 +285,50 @@ private struct KaraokeLine: View {
                 .blur(radius: 2)
             row(.mainSharp, fontSize: fitted)
                 .padding(.horizontal, hPad).padding(.vertical, vPad)
+            sparkles(fitted: fitted, hPad: hPad)
         }
         .frame(maxWidth: .infinity)
+    }
+
+    /// 闪粉：长音（>0.8s）唱到时，字的上方浮起细碎微粒
+    private func sparkles(fitted: CGFloat, hPad: CGFloat) -> some View {
+        let widths = words.map { TextMeasure.width(of: $0.text, size: fitted) }
+        let totalWidth = widths.reduce(0, +) + hPad * 2
+        let height = max(60, fontSize * 2.2)
+        return Canvas { ctx, size in
+            var xCursor = hPad
+            for (i, word) in words.enumerated() {
+                let w = widths[i]
+                defer { xCursor += w }
+                let duration = word.end - word.begin
+                guard duration > 0.8 else { continue }
+                let t = position - word.begin
+                guard t > 0.1, t < duration + 0.4 else { continue }
+                let centerX = xCursor + w / 2
+                let baseY = size.height / 2 - fitted * 0.15
+                var rng = UInt64(i &* 2654435761 &+ 97)
+                func rand() -> Double {
+                    rng = rng &* 6364136223846793005 &+ 1442695040888963407
+                    return Double(rng >> 33 % 1000) / 1000
+                }
+                for particle in 0..<14 {
+                    let r1 = rand(), r2 = rand(), r3 = rand()
+                    let cycle = 0.9 + r1 * 0.7
+                    let birth = 0.1 + Double(particle) * 0.08 + r2 * 0.25
+                    guard t > birth else { continue }
+                    let age = (t - birth).truncatingRemainder(dividingBy: cycle)
+                    let life = age / cycle
+                    let x = centerX + (r3 - 0.5) * w * 0.95 + sin((t + r2 * 7) * 2.6) * 2.5
+                    let y = baseY - life * (12 + r1 * 16)
+                    let fade = sin(life * .pi)
+                    let dot = 1.1 + r2 * 1.7
+                    let rect = CGRect(x: x - dot / 2, y: y - dot / 2, width: dot, height: dot)
+                    ctx.fill(Ellipse().path(in: rect), with: .color(tint.opacity(0.85 * fade)))
+                }
+            }
+        }
+        .frame(width: totalWidth, height: height)
+        .allowsHitTesting(false)
     }
 
     private func row(_ style: RowStyle, fontSize: CGFloat) -> some View {
