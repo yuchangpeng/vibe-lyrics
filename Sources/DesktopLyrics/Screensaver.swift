@@ -12,26 +12,38 @@ final class ArtworkStore: ObservableObject {
     /// 版本号：驱动新旧封面/背景交叉淡化
     @Published private(set) var version = 0
     private var loadedKey: String?
+    private var pendingKey: String?
 
     private init() {}
 
     func refresh(for track: TrackInfo) {
         let key = "\(track.id)|\(track.name)"
-        guard key != loadedKey else { return }
-        loadedKey = key
-        // 不清旧图：新图到了再交叉淡化，避免闪灰底
+        // 成功才记入 loadedKey；失败会清掉 pendingKey，下一秒的 tick 自动重试
+        guard key != loadedKey, key != pendingKey else { return }
+        pendingKey = key
         Task { [weak self] in
-            guard let songID = LyricsEngine.shared.cachedSongID(for: track),
+            // 目录 ID：歌词引擎的缓存索引 → 切歌通知里的 Store URL（引擎还没解析完时的快路）
+            var songID = LyricsEngine.shared.cachedSongID(for: track)
+            if songID == nil, let hint = PlayerEngine.shared.storeHint, hint.name == track.name {
+                songID = hint.id
+            }
+            guard let songID,
                   let url = try? await AppleMusicAPI.shared.artworkURL(songID: songID),
                   let (data, _) = try? await URLSession.shared.data(from: url),
                   let img = NSImage(data: data) else {
-                DebugLog.log("[屏保] 未取到封面")
+                await MainActor.run {
+                    guard let self, self.pendingKey == key else { return }
+                    self.pendingKey = nil
+                }
                 return
             }
             await MainActor.run {
-                guard let self, self.loadedKey == key else { return }
+                guard let self, self.pendingKey == key else { return }
+                self.pendingKey = nil
+                self.loadedKey = key
                 self.image = img
                 self.version += 1
+                DebugLog.log("[屏保] 封面已更新：\(track.name)")
             }
         }
     }
@@ -158,6 +170,8 @@ struct ScreensaverView: View {
     @AppStorage("showTranslation") private var showTranslation = true
     @AppStorage("lyricTint") private var tintRaw = LyricTint.white.rawValue
 
+    @State private var revealed = false
+
     private var tint: Color { (LyricTint(rawValue: tintRaw) ?? .white).color }
     private let fontSize: CGFloat = 46
     private var lineHeight: CGFloat { fontSize * 2.55 }
@@ -169,6 +183,8 @@ struct ScreensaverView: View {
     var body: some View {
         ZStack {
             background
+                .opacity(revealed ? 1 : 0)
+                .animation(.easeOut(duration: 0.9), value: revealed)
             HStack(spacing: 0) {
                 leftColumn
                     .frame(width: coverSize + 40)
@@ -178,6 +194,10 @@ struct ScreensaverView: View {
             }
             .padding(.leading, screen.width * 0.07)
             .padding(.trailing, 50)
+            .opacity(revealed ? 1 : 0)
+            .offset(y: revealed ? 0 : 28)
+            .scaleEffect(revealed ? 1 : 0.985)
+            .animation(.easeOut(duration: 1.05).delay(0.2), value: revealed)
         }
         .frame(width: screen.width, height: screen.height)
         .clipped()
@@ -190,6 +210,8 @@ struct ScreensaverView: View {
             }
             .padding(.top, 34)
             .padding(.trailing, 44)
+            .opacity(revealed ? 1 : 0)
+            .animation(.easeOut(duration: 0.8).delay(0.5), value: revealed)
         }
         .overlay(alignment: .bottomTrailing) {
             Text("♪ Vibe Lyrics")
@@ -197,6 +219,11 @@ struct ScreensaverView: View {
                 .foregroundStyle(.white.opacity(0.4))
                 .padding(.trailing, 44)
                 .padding(.bottom, 30)
+                .opacity(revealed ? 1 : 0)
+                .animation(.easeOut(duration: 0.8).delay(0.5), value: revealed)
+        }
+        .onAppear {
+            DispatchQueue.main.async { revealed = true }
         }
     }
 
@@ -253,21 +280,26 @@ struct ScreensaverView: View {
             }
             .rotationEffect(.degrees(-2.5))
             .id(artwork.version)
-            .animation(.easeInOut(duration: 0.6), value: artwork.version)
+            .transition(.opacity)
             if let track = player.track {
-                Text(track.name)
-                    .font(.system(size: 30, weight: .bold))
-                    .foregroundStyle(.white.opacity(0.96))
-                    .multilineTextAlignment(.center)
-                    .lineLimit(2)
-                    .padding(.top, 40)
-                Text(track.artist)
-                    .font(.system(size: 20, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.6))
-                    .lineLimit(1)
-                    .padding(.top, 8)
+                VStack(spacing: 8) {
+                    Text(track.name)
+                        .font(.system(size: 30, weight: .bold))
+                        .foregroundStyle(.white.opacity(0.96))
+                        .multilineTextAlignment(.center)
+                        .lineLimit(2)
+                    Text(track.artist)
+                        .font(.system(size: 20, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.6))
+                        .lineLimit(1)
+                }
+                .padding(.top, 40)
+                .id("meta-\(track.id)|\(track.name)")
+                .transition(.opacity)
             }
         }
+        .animation(.easeInOut(duration: 0.7), value: artwork.version)
+        .animation(.easeInOut(duration: 0.5), value: player.track)
     }
 
     private var coverCard: some View {
@@ -305,9 +337,18 @@ struct ScreensaverView: View {
 
     // MARK: 右侧（实时歌词，完整动效）
 
+    private var songKey: String {
+        player.track.map { "\($0.id)|\($0.name)" } ?? "none"
+    }
+
     private var rightLyrics: some View {
         TimelineView(.animation(minimumInterval: 1.0 / 60.0, paused: false)) { context in
-            liveLyrics(at: context.date)
+            ZStack {
+                liveLyrics(at: context.date)
+                    .id(songKey)
+                    .transition(.opacity)
+            }
+            .animation(.easeInOut(duration: 0.5), value: songKey)
         }
     }
 
