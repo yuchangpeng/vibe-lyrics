@@ -259,14 +259,14 @@ final class AudioSpectrum: ObservableObject {
             var peak: Float = 0
             for i in i0..<i1 { peak = max(peak, mags[i]) }
             let db = 20 * log10(Double(peak) / Double(fftSize) + 1e-9)
-            newBands[b] = Float(min(1, max(0, (db + 54) / 50)))
+            newBands[b] = Float(min(1, max(0, (db + 58) / 42)))
         }
         lock.lock()
         for b in 0..<Self.bandCount {
             let target = newBands[b]
             let current = bands[b]
             if target > current {
-                bands[b] = current + (target - current) * 0.5 // 上冲柔化，不瞬跳
+                bands[b] = current + (target - current) * 0.62 // 上冲柔化，不瞬跳
             } else {
                 bands[b] = current * 0.90 + target * 0.10     // 回落更缓
             }
@@ -344,7 +344,8 @@ final class SpectrumPanelController: ObservableObject {
         let vf = screen.visibleFrame
         let size = panel.frame.size
         let top = (UserDefaults.standard.string(forKey: "spectrumPosition") ?? "bottom") == "top"
-        let y = top ? vf.maxY - size.height - 8 : vf.minY + 34
+        // 底部按整屏算固定 100pt：自动隐藏的程序坞弹出时也在线条下方
+        let y = top ? vf.maxY - size.height - 8 : screen.frame.minY + 100
         panel.setFrame(
             NSRect(x: vf.midX - size.width / 2, y: y, width: size.width, height: size.height),
             display: false
