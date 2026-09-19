@@ -69,7 +69,7 @@ final class PanelController: ObservableObject {
     }
 
     func setUp() {
-        let size = NSSize(width: 920, height: 260)
+        let size = NSSize(width: 920, height: 300)
         let screen = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
         let origin = NSPoint(x: screen.midX - size.width / 2, y: screen.minY + 70)
         let panel = LyricsPanel(contentRect: NSRect(origin: origin, size: size))
@@ -80,6 +80,13 @@ final class PanelController: ObservableObject {
         hosting.layer?.masksToBounds = false
         panel.contentView = hosting
         panelWidth = panel.frame.width
+        // 旧版本自动保存的面板高度不够放线条时，原地扩高
+        if panel.frame.height < 300 {
+            var f = panel.frame
+            f.origin.y -= (300 - f.height) / 2
+            f.size.height = 300
+            panel.setFrame(f, display: false)
+        }
         self.panel = panel
         DebugLog.log("[面板] 初始 frame=\(NSStringFromRect(panel.frame))")
         lastUserFrame = panel.frame
@@ -147,11 +154,11 @@ final class PanelController: ObservableObject {
     }
 
     /// OverlayView 每次换行时汇报当前文字宽度和内容布局，用于计算可交互区域
-    func updateContentMetrics(fontSize: CGFloat, showTranslation: Bool, textWidth: CGFloat) {
+    func updateContentMetrics(fontSize: CGFloat, showTranslation: Bool, barsHeight: CGFloat = 0, textWidth: CGFloat) {
         let lineHeight = fontSize * 2.55
         let translationHeight = showTranslation ? fontSize * 0.95 : 0
         let nextHeight = fontSize * 1.25
-        let contentHeight = lineHeight + translationHeight + nextHeight
+        let contentHeight = lineHeight + translationHeight + nextHeight + barsHeight
         let panelHeight = panel?.frame.height ?? 260
         interactiveBandTop = (panelHeight - contentHeight) / 2
         interactiveBandHeight = lineHeight + translationHeight

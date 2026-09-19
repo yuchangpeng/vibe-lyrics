@@ -32,6 +32,7 @@ struct SettingsView: View {
     @AppStorage("lyricsOffset") private var lyricsOffset = 0.12
     @AppStorage("showPreview") private var showPreview = true
     @AppStorage("showTranslation") private var showTranslation = true
+    @AppStorage("showSpectrum") private var showSpectrum = true
     @AppStorage("lyricTint") private var tintRaw = LyricTint.white.rawValue
     @ObservedObject private var panelController = PanelController.shared
     @AppStorage("autoHideOnPause") private var autoHideOnPause = true
@@ -58,6 +59,10 @@ struct SettingsView: View {
                 .pickerStyle(.segmented)
                 Toggle("显示下一句预告", isOn: $showPreview)
                 Toggle("显示官方翻译（歌曲带翻译时）", isOn: $showTranslation)
+                Toggle("音乐律动线条（真实音频驱动）", isOn: $showSpectrum)
+                    .onChange(of: showSpectrum) { _, _ in
+                        AudioSpectrum.shared.updateDesiredState()
+                    }
             }
             Section("同步") {
                 HStack {

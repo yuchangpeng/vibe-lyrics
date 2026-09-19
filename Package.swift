@@ -3,7 +3,7 @@ import PackageDescription
 
 let package = Package(
     name: "DesktopLyrics",
-    platforms: [.macOS(.v14)],
+    platforms: [.macOS("15.0")],
     dependencies: [
         .package(url: "https://github.com/sindresorhus/KeyboardShortcuts", from: "2.0.0")
     ],
