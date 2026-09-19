@@ -263,8 +263,20 @@ final class AudioSpectrum: ObservableObject {
         }
         lock.lock()
         for b in 0..<Self.bandCount {
-            bands[b] = max(newBands[b], bands[b] * 0.86)
+            let target = newBands[b]
+            let current = bands[b]
+            if target > current {
+                bands[b] = current + (target - current) * 0.5 // 上冲柔化，不瞬跳
+            } else {
+                bands[b] = current * 0.90 + target * 0.10     // 回落更缓
+            }
         }
+        // 空间平滑：相邻条互相牵连，整排如液体涌动
+        var smoothed = bands
+        for b in 1..<(Self.bandCount - 1) {
+            smoothed[b] = (bands[b - 1] + bands[b] * 2 + bands[b + 1]) / 4
+        }
+        bands = smoothed
         lock.unlock()
         analyzeCount += 1
         if analyzeCount % 250 == 1 {
@@ -332,7 +344,7 @@ final class SpectrumPanelController: ObservableObject {
         let vf = screen.visibleFrame
         let size = panel.frame.size
         let top = (UserDefaults.standard.string(forKey: "spectrumPosition") ?? "bottom") == "top"
-        let y = top ? vf.maxY - size.height - 6 : vf.minY + 6
+        let y = top ? vf.maxY - size.height - 8 : vf.minY + 34
         panel.setFrame(
             NSRect(x: vf.midX - size.width / 2, y: y, width: size.width, height: size.height),
             display: false
