@@ -54,10 +54,26 @@ enum TTMLParser {
                 }
             }
         }
+        if !shouldKeepTranslations(forOriginal: lines) {
+            for i in lines.indices { lines[i].translation = nil }
+        }
         let wordTimed = sax.timing.lowercased() == "word"
             || lines.contains { $0.words?.isEmpty == false }
         let hasTranslation = lines.contains { $0.translation != nil }
         return Lyrics(lines: lines, wordTimed: wordTimed, hasTranslation: hasTranslation)
+    }
+
+    /// 翻译只留「外语→中文」：原文是中文歌（含粤语）时整首不显示翻译。
+    /// 判定按整首歌：含日文假名 → 日语歌保留；汉字占比 >30% → 中文歌丢弃；其余保留。
+    static func shouldKeepTranslations(forOriginal lines: [LyricLine]) -> Bool {
+        let all = lines.map(\.text).joined()
+        guard !all.isEmpty else { return false }
+        let scalars = all.unicodeScalars
+        if scalars.contains(where: { (0x3040...0x30FF).contains(Int($0.value)) }) {
+            return true // 日语歌
+        }
+        let hanCount = scalars.filter { (0x4E00...0x9FFF).contains(Int($0.value)) }.count
+        return Double(hanCount) / Double(max(1, scalars.count)) < 0.3
     }
 
     /// 「翻译」只是原文的繁简转换时不算翻译（国语歌会返回这种，显示出来是噪音）
@@ -88,6 +104,9 @@ enum TTMLParser {
             if let t, !isScriptConversionOnly(lines[i].text, t) {
                 lines[i].translation = t
             }
+        }
+        if !shouldKeepTranslations(forOriginal: lines) {
+            for i in lines.indices { lines[i].translation = nil }
         }
         return Lyrics(
             lines: lines,
