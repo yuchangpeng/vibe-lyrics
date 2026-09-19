@@ -33,6 +33,7 @@ struct SettingsView: View {
     @AppStorage("showPreview") private var showPreview = true
     @AppStorage("showTranslation") private var showTranslation = true
     @AppStorage("showSpectrum") private var showSpectrum = true
+    @AppStorage("spectrumPosition") private var spectrumPosition = "bottom"
     @AppStorage("lyricTint") private var tintRaw = LyricTint.white.rawValue
     @ObservedObject private var panelController = PanelController.shared
     @AppStorage("autoHideOnPause") private var autoHideOnPause = true
@@ -63,6 +64,14 @@ struct SettingsView: View {
                     .onChange(of: showSpectrum) { _, _ in
                         AudioSpectrum.shared.updateDesiredState()
                     }
+                Picker("线条位置", selection: $spectrumPosition) {
+                    Text("屏幕底部").tag("bottom")
+                    Text("屏幕顶部").tag("top")
+                }
+                .disabled(!showSpectrum)
+                .onChange(of: spectrumPosition) { _, _ in
+                    SpectrumPanelController.shared.reposition()
+                }
             }
             Section("同步") {
                 HStack {
@@ -77,6 +86,7 @@ struct SettingsView: View {
             Section("快捷键") {
                 KeyboardShortcuts.Recorder("显示 / 隐藏歌词", name: .toggleLyrics)
                 KeyboardShortcuts.Recorder("完全穿透（锁定）", name: .toggleClickThrough)
+                KeyboardShortcuts.Recorder("音乐线条 显示/隐藏", name: .toggleSpectrum)
             }
             Section("行为") {
                 Toggle("完全穿透（锁定歌词条）", isOn: $panelController.clickThrough)

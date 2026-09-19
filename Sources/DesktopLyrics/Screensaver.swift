@@ -217,8 +217,8 @@ struct ScreensaverView: View {
         }
         .overlay(alignment: .bottom) {
             if showSpectrum && spectrum.available {
-                TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: false)) { _ in
-                    SpectrumBars(tint: tint)
+                TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: false)) { ctx in
+                    SpectrumBars(tint: tint, tick: ctx.date)
                         .frame(width: screen.width * 0.4, height: 52)
                 }
                 .padding(.bottom, 88)

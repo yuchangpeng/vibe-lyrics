@@ -23,6 +23,7 @@ final class AudioSpectrum: ObservableObject {
 
     private let lock = NSLock()
     private var bands = [Float](repeating: 0, count: AudioSpectrum.bandCount)
+    private var analyzeCount = 0
 
     private let fftSize = 2048
     private let log2n: vDSP_Length = 11
@@ -265,6 +266,116 @@ final class AudioSpectrum: ObservableObject {
             bands[b] = max(newBands[b], bands[b] * 0.86)
         }
         lock.unlock()
+        analyzeCount += 1
+        if analyzeCount % 250 == 1 {
+            let peak = newBands.max() ?? 0
+            DebugLog.log("[频谱] 心跳 peak=\(String(format: "%.2f", peak))")
+        }
+    }
+}
+
+// MARK: - 独立音乐线条悬浮窗（不依附歌词条，屏幕上/下居中，永远穿透）
+
+@MainActor
+final class SpectrumPanelController: ObservableObject {
+    static let shared = SpectrumPanelController()
+
+    /// 快捷键控制的显隐（与设置总开关、引擎就绪相与）
+    @Published var visible: Bool {
+        didSet {
+            UserDefaults.standard.set(visible, forKey: "spectrumBarsVisible")
+            apply()
+        }
+    }
+
+    private var panel: NSPanel?
+    private var bag = Set<AnyCancellable>()
+
+    private init() {
+        visible = UserDefaults.standard.object(forKey: "spectrumBarsVisible") as? Bool ?? true
+    }
+
+    func setUp() {
+        let panel = NSPanel(
+            contentRect: NSRect(x: 0, y: 0, width: 560, height: 64),
+            styleMask: [.borderless, .nonactivatingPanel],
+            backing: .buffered, defer: false
+        )
+        panel.isFloatingPanel = true
+        panel.level = .statusBar
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        panel.backgroundColor = .clear
+        panel.isOpaque = false
+        panel.hasShadow = false
+        panel.ignoresMouseEvents = true // 纯展示，永远穿透
+        panel.isReleasedWhenClosed = false
+        let hosting = NSHostingView(rootView: SpectrumWindowView())
+        hosting.wantsLayer = true
+        hosting.layer?.masksToBounds = false
+        panel.contentView = hosting
+        self.panel = panel
+        reposition()
+        apply()
+
+        AudioSpectrum.shared.$available
+            .removeDuplicates()
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in self?.apply() }
+            .store(in: &bag)
+    }
+
+    func toggle() { visible.toggle() }
+
+    /// 位置（屏幕底部/顶部，水平居中）；设置变化时调用
+    func reposition() {
+        guard let panel, let screen = NSScreen.main else { return }
+        let vf = screen.visibleFrame
+        let size = panel.frame.size
+        let top = (UserDefaults.standard.string(forKey: "spectrumPosition") ?? "bottom") == "top"
+        let y = top ? vf.maxY - size.height - 6 : vf.minY + 6
+        panel.setFrame(
+            NSRect(x: vf.midX - size.width / 2, y: y, width: size.width, height: size.height),
+            display: false
+        )
+    }
+
+    private func apply() {
+        guard let panel else { return }
+        if visible && AudioSpectrum.shared.available {
+            reposition()
+            panel.alphaValue = 0
+            panel.orderFrontRegardless()
+            NSAnimationContext.runAnimationGroup { ctx in
+                ctx.duration = 0.25
+                panel.animator().alphaValue = 1
+            }
+        } else {
+            NSAnimationContext.runAnimationGroup({ ctx in
+                ctx.duration = 0.2
+                panel.animator().alphaValue = 0
+            }, completionHandler: { [weak self] in
+                guard let self else { return }
+                if !(self.visible && AudioSpectrum.shared.available) {
+                    self.panel?.orderOut(nil)
+                }
+            })
+        }
+    }
+}
+
+/// 独立线条窗的内容
+struct SpectrumWindowView: View {
+    @AppStorage("lyricTint") private var tintRaw = LyricTint.white.rawValue
+    @ObservedObject private var spectrum = AudioSpectrum.shared
+
+    private var tint: Color { (LyricTint(rawValue: tintRaw) ?? .white).color }
+
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: !spectrum.available)) { context in
+            SpectrumBars(tint: tint, tick: context.date)
+                .frame(width: 520, height: 44)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
     }
 }
 
@@ -272,6 +383,8 @@ final class AudioSpectrum: ObservableObject {
 
 struct SpectrumBars: View {
     var tint: Color
+    /// 每帧变化的时间戳：没有它 SwiftUI 会认为视图没变而跳过重绘
+    var tick: Date
 
     var body: some View {
         Canvas { context, size in

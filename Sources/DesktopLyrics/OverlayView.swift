@@ -13,14 +13,12 @@ struct OverlayView: View {
     @ObservedObject private var player = PlayerEngine.shared
     @ObservedObject private var lyricsEngine = LyricsEngine.shared
     @ObservedObject private var screensaver = ScreensaverController.shared
-    @ObservedObject private var spectrum = AudioSpectrum.shared
 
     @AppStorage("lyricsOffset") private var lyricsOffset: Double = 0.12
     @AppStorage("fontSize") private var fontSize: Double = 32
     @AppStorage("showPreview") private var showPreview = true
     @AppStorage("showTranslation") private var showTranslation = true
     @AppStorage("lyricTint") private var tintRaw = LyricTint.white.rawValue
-    @AppStorage("showSpectrum") private var showSpectrum = true
 
     private var tint: Color { (LyricTint(rawValue: tintRaw) ?? .white).color }
     private var lineHeight: CGFloat { fontSize * 2.55 }
@@ -154,15 +152,6 @@ struct OverlayView: View {
                 }
             }
             .frame(height: nextHeight)
-            // 音乐线条（真实音频驱动）
-            if showSpectrum && spectrum.available {
-                SpectrumBars(tint: tint)
-                    .frame(width: 480, height: fontSize * 0.85)
-                    .frame(maxWidth: .infinity)
-                    .padding(.top, 8)
-            }
-            // 切歌提示：新歌前 8 秒在最下方小字显示歌名歌手，不挡歌词
-            trackInfoHint(at: date)
         }
         .animation(.easeOut(duration: 0.4), value: index)
         .onChange(of: index) { _, newIndex in
@@ -173,24 +162,6 @@ struct OverlayView: View {
         }
     }
 
-    /// 切歌提示：淡入 0.5s、停留、最后 0.8s 淡出；槽位恒高不跳版
-    @ViewBuilder
-    private func trackInfoHint(at date: Date) -> some View {
-        ZStack {
-            if let track = player.track {
-                let elapsed = date.timeIntervalSince(player.trackChangedAt)
-                if elapsed < 8 {
-                    let alpha = min(Self.smoothstep(elapsed / 0.5), Self.smoothstep((8 - elapsed) / 0.8))
-                    layeredText("♪ \(track.name) — \(track.artist)", size: fontSize * 0.42, weight: .semibold,
-                                textOpacity: 0.5, hPad: 16, vPad: 4, minScale: 0.6,
-                                crispBlur: 1.2, wideBlur: 3, crispOpacity: 0.12, wideOpacity: 0.15)
-                        .opacity(alpha)
-                }
-            }
-        }
-        .frame(height: fontSize * 0.6)
-    }
-
     /// 向窗口控制器汇报当前文字宽度（智能穿透用：只有文字附近可点击）
     private func reportMetrics(_ lyrics: Lyrics, index: Int?) {
         let text = index.map { lyrics.lines[$0].text } ?? lyrics.lines.first?.text ?? ""
@@ -199,7 +170,6 @@ struct OverlayView: View {
         PanelController.shared.updateContentMetrics(
             fontSize: fontSize,
             showTranslation: showTranslation && lyrics.hasTranslation,
-            barsHeight: ((showSpectrum && spectrum.available) ? fontSize * 0.85 + 8 : 0) + fontSize * 0.6,
             textWidth: width
         )
     }
