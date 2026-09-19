@@ -84,8 +84,10 @@ final class AppleMusicAPI {
         }
 
         if let ttml = try await fetchTTML("syllable-lyrics", query: zhQuery) {
-            DebugLog.log("[API] 取到 syllable-lyrics（中文语境，\(ttml.count) 字符）")
-            return LyricsPayload(ttml: ttml, localizedTTML: nil)
+            // 逐字文件不带翻译区块，翻译源要从逐行中文版单独拿来合并
+            let zh = (try? await fetchTTML("lyrics", query: zhQuery)) ?? nil
+            DebugLog.log("[API] 取到 syllable-lyrics（中文语境，\(ttml.count) 字符，翻译源=\(zh == nil ? "无" : "有")）")
+            return LyricsPayload(ttml: ttml, localizedTTML: zh)
         }
         if let ttml = try await fetchTTML("syllable-lyrics", query: []) {
             let zh = (try? await fetchTTML("lyrics", query: zhQuery)) ?? nil
