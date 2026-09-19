@@ -62,36 +62,39 @@ final class AppleMusicAPI {
         let localizedTTML: String?
     }
 
-    /// 取歌词：优先逐字（syllable-lyrics），回退逐行（lyrics）。
-    /// 官方翻译是独立的中文版 TTML，要用 extend=ttmlLocalizations 额外请求。
+    /// 取歌词三级保险：逐字+中文语境（翻译内嵌）→ 逐字裸取+逐行中文版补翻译 → 逐行。
+    /// 教训：extend=ttmlLocalizations 会让逐字端点静默返回空，绝不能再加。
     func lyricsPayload(songID: String) async throws -> LyricsPayload? {
         let sf = try await storefront()
-        for endpoint in ["syllable-lyrics", "lyrics"] {
+        let zhQuery = [URLQueryItem(name: "l", value: "zh-Hans-CN")]
+
+        func fetchTTML(_ endpoint: String, query: [URLQueryItem]) async throws -> String? {
             do {
                 let data = try await authedRequest(
-                    path: "/v1/catalog/\(sf)/songs/\(songID)/\(endpoint)",
-                    query: [
-                        URLQueryItem(name: "l", value: "zh-Hans-CN"),
-                        URLQueryItem(name: "extend", value: "ttmlLocalizations"),
-                    ]
+                    path: "/v1/catalog/\(sf)/songs/\(songID)/\(endpoint)", query: query
                 )
                 guard let obj = try JSONSerialization.jsonObject(with: data) as? [String: Any],
                       let arr = obj["data"] as? [[String: Any]],
                       let attrs = arr.first?["attributes"] as? [String: Any],
-                      let ttml = attrs["ttml"] as? String, !ttml.isEmpty else {
-                    continue
-                }
-                var localized: String?
-                if let str = attrs["ttmlLocalizations"] as? String, !str.isEmpty {
-                    localized = str
-                } else if let dict = attrs["ttmlLocalizations"] as? [String: Any] {
-                    localized = dict.values.compactMap { $0 as? String }.first { !$0.isEmpty }
-                }
-                DebugLog.log("[API] 取到 \(endpoint)（\(ttml.count) 字符，翻译版=\(localized.map { "\($0.count) 字符" } ?? "无")）")
-                return LyricsPayload(ttml: ttml, localizedTTML: localized)
-            } catch AMError.http(let code) where code == 404 {
-                continue
+                      let ttml = attrs["ttml"] as? String, !ttml.isEmpty else { return nil }
+                return ttml
+            } catch AMError.http(let code) where code == 404 || code == 400 {
+                return nil
             }
+        }
+
+        if let ttml = try await fetchTTML("syllable-lyrics", query: zhQuery) {
+            DebugLog.log("[API] 取到 syllable-lyrics（中文语境，\(ttml.count) 字符）")
+            return LyricsPayload(ttml: ttml, localizedTTML: nil)
+        }
+        if let ttml = try await fetchTTML("syllable-lyrics", query: []) {
+            let zh = (try? await fetchTTML("lyrics", query: zhQuery)) ?? nil
+            DebugLog.log("[API] 取到 syllable-lyrics（裸取，\(ttml.count) 字符，翻译源=\(zh == nil ? "无" : "有")）")
+            return LyricsPayload(ttml: ttml, localizedTTML: zh)
+        }
+        if let ttml = try await fetchTTML("lyrics", query: zhQuery) {
+            DebugLog.log("[API] 取到 lyrics（\(ttml.count) 字符）")
+            return LyricsPayload(ttml: ttml, localizedTTML: nil)
         }
         return nil
     }
