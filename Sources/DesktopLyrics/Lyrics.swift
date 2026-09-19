@@ -48,7 +48,8 @@ enum TTMLParser {
         var lines = sax.lines
         if !sax.translations.isEmpty {
             for i in lines.indices {
-                if let key = lines[i].key, let t = sax.translations[key] {
+                if let key = lines[i].key, let t = sax.translations[key],
+                   !isScriptConversionOnly(lines[i].text, t) {
                     lines[i].translation = t
                 }
             }
@@ -57,6 +58,42 @@ enum TTMLParser {
             || lines.contains { $0.words?.isEmpty == false }
         let hasTranslation = lines.contains { $0.translation != nil }
         return Lyrics(lines: lines, wordTimed: wordTimed, hasTranslation: hasTranslation)
+    }
+
+    /// 「翻译」只是原文的繁简转换时不算翻译（国语歌会返回这种，显示出来是噪音）
+    static func isScriptConversionOnly(_ original: String, _ translation: String) -> Bool {
+        if original == translation { return true }
+        if original.applyingTransform(StringTransform("Hant-Hans"), reverse: false) == translation { return true }
+        if original.applyingTransform(StringTransform("Hant-Hans"), reverse: true) == translation { return true }
+        return false
+    }
+
+    /// 把「中文版 TTML」的每行文本按行 key（或行号）合并为主歌词的 translation；
+    /// 文本与原文相同的行不算翻译（中文歌请求中文版会原样返回）
+    static func parseMerged(_ ttml: String, localized: String?) -> Lyrics? {
+        guard let base = parse(ttml) else { return nil }
+        guard let localized, let zh = parse(localized) else { return base }
+        var byKey: [String: String] = [:]
+        for line in zh.lines {
+            if let key = line.key { byKey[key] = line.text }
+        }
+        var lines = base.lines
+        for i in lines.indices where lines[i].translation == nil {
+            var t: String?
+            if let key = lines[i].key, let matched = byKey[key] {
+                t = matched
+            } else if zh.lines.count == lines.count {
+                t = zh.lines[i].text
+            }
+            if let t, !isScriptConversionOnly(lines[i].text, t) {
+                lines[i].translation = t
+            }
+        }
+        return Lyrics(
+            lines: lines,
+            wordTimed: base.wordTimed,
+            hasTranslation: lines.contains { $0.translation != nil }
+        )
     }
 
     /// "15.055" / "1:15.055" / "1:02:03.004" → 秒
@@ -90,8 +127,8 @@ enum TTMLParser {
         private var wordText = ""
         private var backgroundDepth = 0
 
-        // 翻译解析状态：只取第一个 <translation> 块（通常即用户语言）
-        private var translationBlockCount = 0
+        // 翻译解析状态：跳过发音（罗马音）块，取翻译块
+        private var inPronunciationBlock = false
         private var currentTranslationKey: String?
         private var translationBuffer = ""
 
@@ -104,8 +141,8 @@ enum TTMLParser {
             case "tt":
                 if let t = attributes["itunes:timing"] { timing = t }
             case "translation":
-                translationBlockCount += 1
-            case "text" where translationBlockCount == 1 && !inLine:
+                inPronunciationBlock = (attributes["type"] ?? "").lowercased().contains("pronunciation")
+            case "text" where !inLine && !inPronunciationBlock:
                 if let key = attributes["for"] {
                     currentTranslationKey = key
                     translationBuffer = ""
@@ -155,6 +192,8 @@ enum TTMLParser {
             namespaceURI: String?, qualifiedName: String?
         ) {
             switch elementName {
+            case "translation":
+                inPronunciationBlock = false
             case "text":
                 if let key = currentTranslationKey {
                     let t = translationBuffer.trimmingCharacters(in: .whitespacesAndNewlines)

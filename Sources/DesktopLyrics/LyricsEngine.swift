@@ -62,6 +62,7 @@ final class LyricsEngine: ObservableObject {
         guard let track = PlayerEngine.shared.track else { return }
         if let songID = idIndex[key(for: track)] {
             try? fm.removeItem(at: cacheURL(songID: songID, ext: "ttml"))
+            try? fm.removeItem(at: cacheURL(songID: songID, ext: "zh.ttml"))
             try? fm.removeItem(at: cacheURL(songID: songID, ext: "none"))
         }
         fetch(track)
@@ -118,24 +119,28 @@ final class LyricsEngine: ObservableObject {
             }
             saveIDIndex(key: key(for: track), songID: songID)
 
-            // 2. 磁盘缓存
+            // 2. 磁盘缓存（主词 + 翻译版）
             let ttmlURL = cacheURL(songID: songID, ext: "ttml")
+            let zhURL = cacheURL(songID: songID, ext: "zh.ttml")
             let noneURL = cacheURL(songID: songID, ext: "none")
             if let cached = try? String(contentsOf: ttmlURL, encoding: .utf8),
-               let lyrics = TTMLParser.parse(cached) {
+               let lyrics = TTMLParser.parseMerged(cached, localized: try? String(contentsOf: zhURL, encoding: .utf8)) {
                 DebugLog.log("[歌词] 命中缓存：\(track.name)（\(lyrics.lines.count) 行，逐字=\(lyrics.wordTimed)，翻译=\(lyrics.lines.filter { $0.translation != nil }.count) 行）")
                 return .ready(lyrics)
             }
             if fm.fileExists(atPath: noneURL.path) { return .unavailable }
 
-            // 3. 在线取词
-            guard let ttml = try await AppleMusicAPI.shared.lyricsTTML(songID: songID) else {
+            // 3. 在线取词（主词 + 翻译版）
+            guard let payload = try await AppleMusicAPI.shared.lyricsPayload(songID: songID) else {
                 try? Data().write(to: noneURL) // 记住「无词」，避免每次重复请求
                 DebugLog.log("[歌词] Apple 没有这首的歌词：\(track.name)")
                 return .unavailable
             }
-            try? ttml.data(using: .utf8)?.write(to: ttmlURL)
-            guard let lyrics = TTMLParser.parse(ttml) else {
+            try? payload.ttml.data(using: .utf8)?.write(to: ttmlURL)
+            if let localized = payload.localizedTTML {
+                try? localized.data(using: .utf8)?.write(to: zhURL)
+            }
+            guard let lyrics = TTMLParser.parseMerged(payload.ttml, localized: payload.localizedTTML) else {
                 DebugLog.log("[歌词] TTML 解析失败：\(track.name)")
                 return .unavailable
             }

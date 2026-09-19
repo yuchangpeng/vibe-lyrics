@@ -57,19 +57,38 @@ final class AppleMusicAPI {
         return id
     }
 
-    /// 取歌词 TTML：优先逐字（syllable-lyrics），回退逐行（lyrics）；无词返回 nil
-    func lyricsTTML(songID: String) async throws -> String? {
+    struct LyricsPayload {
+        let ttml: String
+        let localizedTTML: String?
+    }
+
+    /// 取歌词：优先逐字（syllable-lyrics），回退逐行（lyrics）。
+    /// 官方翻译是独立的中文版 TTML，要用 extend=ttmlLocalizations 额外请求。
+    func lyricsPayload(songID: String) async throws -> LyricsPayload? {
         let sf = try await storefront()
         for endpoint in ["syllable-lyrics", "lyrics"] {
             do {
-                let data = try await authedRequest(path: "/v1/catalog/\(sf)/songs/\(songID)/\(endpoint)")
-                if let obj = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-                   let arr = obj["data"] as? [[String: Any]],
-                   let attrs = arr.first?["attributes"] as? [String: Any],
-                   let ttml = attrs["ttml"] as? String, !ttml.isEmpty {
-                    DebugLog.log("[API] 取到 \(endpoint)（\(ttml.count) 字符）")
-                    return ttml
+                let data = try await authedRequest(
+                    path: "/v1/catalog/\(sf)/songs/\(songID)/\(endpoint)",
+                    query: [
+                        URLQueryItem(name: "l", value: "zh-Hans-CN"),
+                        URLQueryItem(name: "extend", value: "ttmlLocalizations"),
+                    ]
+                )
+                guard let obj = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+                      let arr = obj["data"] as? [[String: Any]],
+                      let attrs = arr.first?["attributes"] as? [String: Any],
+                      let ttml = attrs["ttml"] as? String, !ttml.isEmpty else {
+                    continue
                 }
+                var localized: String?
+                if let str = attrs["ttmlLocalizations"] as? String, !str.isEmpty {
+                    localized = str
+                } else if let dict = attrs["ttmlLocalizations"] as? [String: Any] {
+                    localized = dict.values.compactMap { $0 as? String }.first { !$0.isEmpty }
+                }
+                DebugLog.log("[API] 取到 \(endpoint)（\(ttml.count) 字符，翻译版=\(localized.map { "\($0.count) 字符" } ?? "无")）")
+                return LyricsPayload(ttml: ttml, localizedTTML: localized)
             } catch AMError.http(let code) where code == 404 {
                 continue
             }
