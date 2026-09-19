@@ -28,8 +28,6 @@
 	<true/>
 	<key>NSHighResolutionCapable</key>
 	<true/>
-	<key>NSAudioCaptureUsageDescription</key>
-	<string>Vibe Lyrics 需要捕捉「音乐」的播放声音来驱动音乐律动线条。声音只在本机实时分析，不录存、不上传。</string>
 	<key>NSAppleEventsUsageDescription</key>
 	<string>桌面歌词需要连接「音乐」App，读取当前播放的歌曲信息和播放进度，用于在桌面显示歌词。</string>
 </dict>

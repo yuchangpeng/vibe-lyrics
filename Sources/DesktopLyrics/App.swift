@@ -7,8 +7,6 @@ extension KeyboardShortcuts.Name {
     static let toggleLyrics = Self("toggleLyrics", default: .init(.l, modifiers: [.option, .command]))
     /// 完全穿透（锁定歌词）开关（默认 ⇧⌥⌘L）
     static let toggleClickThrough = Self("toggleClickThrough", default: .init(.l, modifiers: [.shift, .option, .command]))
-    /// 音乐线条 显示/隐藏（默认 ⇧⌥⌘K）
-    static let toggleSpectrum = Self("toggleSpectrum", default: .init(.k, modifiers: [.shift, .option, .command]))
 }
 
 @main
@@ -33,7 +31,6 @@ private struct MenuContent: View {
     @ObservedObject private var panelController = PanelController.shared
     @ObservedObject private var engine = PlayerEngine.shared
     @ObservedObject private var auth = AppleMusicAuth.shared
-    @ObservedObject private var spectrumPanel = SpectrumPanelController.shared
     @Environment(\.openWindow) private var openWindow
 
     var body: some View {
@@ -63,7 +60,6 @@ private struct MenuContent: View {
             panelController.toggleVisible()
         }
         Toggle("完全穿透（⇧⌥⌘L）", isOn: $panelController.clickThrough)
-        Toggle("音乐线条（⇧⌥⌘K）", isOn: $spectrumPanel.visible)
         SettingsLink {
             Text("设置…")
         }
@@ -82,13 +78,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         LyricsEngine.shared.start()
         AppleMusicAuth.shared.checkUserTokenAtLaunch()
         ScreensaverController.shared.start()
-        AudioSpectrum.shared.startEngine()
-        SpectrumPanelController.shared.setUp()
         KeyboardShortcuts.onKeyDown(for: .toggleLyrics) {
             PanelController.shared.toggleVisible()
-        }
-        KeyboardShortcuts.onKeyDown(for: .toggleSpectrum) {
-            SpectrumPanelController.shared.toggle()
         }
         KeyboardShortcuts.onKeyDown(for: .toggleClickThrough) {
             PanelController.shared.clickThrough.toggle()

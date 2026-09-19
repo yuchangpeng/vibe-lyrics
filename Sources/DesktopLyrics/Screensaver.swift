@@ -169,8 +169,6 @@ struct ScreensaverView: View {
     @AppStorage("lyricsOffset") private var lyricsOffset: Double = 0.12
     @AppStorage("showTranslation") private var showTranslation = true
     @AppStorage("lyricTint") private var tintRaw = LyricTint.white.rawValue
-    @AppStorage("showSpectrum") private var showSpectrum = true
-    @ObservedObject private var spectrum = AudioSpectrum.shared
 
     @State private var revealed = false
 
@@ -214,17 +212,6 @@ struct ScreensaverView: View {
             .padding(.trailing, 44)
             .opacity(revealed ? 1 : 0)
             .animation(.easeOut(duration: 0.8).delay(0.5), value: revealed)
-        }
-        .overlay(alignment: .bottom) {
-            if showSpectrum && spectrum.available {
-                TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: false)) { ctx in
-                    SpectrumBars(tint: tint, tick: ctx.date)
-                        .frame(width: screen.width * 0.4, height: 52)
-                }
-                .padding(.bottom, 88)
-                .opacity(revealed ? 1 : 0)
-                .animation(.easeOut(duration: 0.8).delay(0.5), value: revealed)
-            }
         }
         .overlay(alignment: .bottomTrailing) {
             Text("♪ Vibe Lyrics")
