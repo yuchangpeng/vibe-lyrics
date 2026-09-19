@@ -89,20 +89,19 @@ enum TTMLParser {
     static func parseMerged(_ ttml: String, localized: String?) -> Lyrics? {
         guard let base = parse(ttml) else { return nil }
         guard let localized, let zh = parse(localized) else { return base }
-        var byKeyText: [String: String] = [:]
         var byKeyTranslation: [String: String] = [:]
         for line in zh.lines {
-            guard let key = line.key else { continue }
-            byKeyText[key] = line.text
-            if let tr = line.translation { byKeyTranslation[key] = tr }
+            if let key = line.key, let tr = line.translation {
+                byKeyTranslation[key] = tr
+            }
         }
         var lines = base.lines
         for i in lines.indices where lines[i].translation == nil {
             var t: String?
             if let key = lines[i].key {
-                t = byKeyTranslation[key] ?? byKeyText[key]
+                t = byKeyTranslation[key]
             } else if zh.lines.count == lines.count {
-                t = zh.lines[i].translation ?? zh.lines[i].text
+                t = zh.lines[i].translation
             }
             if let t, !isScriptConversionOnly(lines[i].text, t) {
                 lines[i].translation = t

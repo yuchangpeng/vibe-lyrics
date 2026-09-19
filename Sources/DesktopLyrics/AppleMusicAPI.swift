@@ -83,16 +83,14 @@ final class AppleMusicAPI {
             }
         }
 
+        // 实证：网页版接口不供应英日→中翻译（app 专属通道），不再空跑翻译源请求
         if let ttml = try await fetchTTML("syllable-lyrics", query: zhQuery) {
-            // 逐字文件不带翻译区块，翻译源要从逐行中文版单独拿来合并
-            let zh = (try? await fetchTTML("lyrics", query: zhQuery)) ?? nil
-            DebugLog.log("[API] 取到 syllable-lyrics（中文语境，\(ttml.count) 字符，翻译源=\(zh == nil ? "无" : "有")）")
-            return LyricsPayload(ttml: ttml, localizedTTML: zh)
+            DebugLog.log("[API] 取到 syllable-lyrics（中文语境，\(ttml.count) 字符）")
+            return LyricsPayload(ttml: ttml, localizedTTML: nil)
         }
         if let ttml = try await fetchTTML("syllable-lyrics", query: []) {
-            let zh = (try? await fetchTTML("lyrics", query: zhQuery)) ?? nil
-            DebugLog.log("[API] 取到 syllable-lyrics（裸取，\(ttml.count) 字符，翻译源=\(zh == nil ? "无" : "有")）")
-            return LyricsPayload(ttml: ttml, localizedTTML: zh)
+            DebugLog.log("[API] 取到 syllable-lyrics（裸取，\(ttml.count) 字符）")
+            return LyricsPayload(ttml: ttml, localizedTTML: nil)
         }
         if let ttml = try await fetchTTML("lyrics", query: zhQuery) {
             DebugLog.log("[API] 取到 lyrics（\(ttml.count) 字符）")
